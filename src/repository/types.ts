@@ -56,15 +56,17 @@ export interface ReleaseEdit {
 }
 
 export interface Repository {
-  listInbox(): InboxItem[];
-  getEmail(emailId: string): InboxItem | null;
-  listAudit(filter?: { emailId?: string; actor?: Actor }): AuditRecord[];
-  listShipTos(customerId: string): ShipToOption[];
-  release(emailId: string, soNumber: string): ActionResult;
-  releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): ActionResult;
-  reject(emailId: string, soNumber: string | null, reason: string): ActionResult;
-  markNoAction(emailId: string): ActionResult;
-  bulkRelease(emailIds: string[]): { emailId: string; result: ActionResult }[];
-  approveChange(emailId: string): ActionResult;
-  getSnapshot(): ErpSnapshot;
+  /** Run the agent over the inbox and persist the result idempotently. */
+  processInbox(): Promise<ProcessingResult[]>;
+  listInbox(): Promise<InboxItem[]>;
+  getEmail(emailId: string): Promise<InboxItem | null>;
+  listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]>;
+  listShipTos(customerId: string): Promise<ShipToOption[]>;
+  release(emailId: string, soNumber: string): Promise<ActionResult>;
+  releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult>;
+  reject(emailId: string, soNumber: string | null, reason: string): Promise<ActionResult>;
+  markNoAction(emailId: string): Promise<ActionResult>;
+  bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]>;
+  approveChange(emailId: string): Promise<ActionResult>;
+  getSnapshot(): Promise<ErpSnapshot>;
 }

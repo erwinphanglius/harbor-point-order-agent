@@ -33,11 +33,24 @@ append-only audit trail.
    the *same* tools through function calling.
 3. **Tools** (`src/tools/*`) — the agent's tools (lookup customer/product/price,
    check stock/credit, draft order, propose change, flag review).
-4. **Repository** (`src/repository/*`) — an in-memory store that runs the
-   offline agent once and serves the UI, with a Postgres/Drizzle schema and
-   seed path for a real deployment.
+4. **Repository** (`src/repository/*`) — one interface, two implementations:
+   `memory.ts` (dev/demo, no DB) and `pg.ts` (Drizzle over Postgres). A single
+   factory (`src/lib/repo.ts`) picks the Postgres implementation when
+   `DATABASE_URL` is set, otherwise the in-memory one.
 5. **UI** (`src/app/*`, `src/components/*`) — Next.js App Router (server
    components + server actions) and Tailwind.
+
+### How persistence works
+
+Every page, server action and the CLI goes through the one repository factory
+in `src/lib/repo.ts` — there is no `if (db)` branching in components. With
+`DATABASE_URL` set, the repository is the Postgres-backed `PgRepository`: the
+inbox, dispositions, draft orders, line items (with `price_source`), warnings
+and the audit trail all live in `src/db/schema.ts` tables. Releases allocate
+stock, consume credit, set `released_at` and write audit rows inside a
+transaction, so approvals and releases survive server restarts and serverless
+instances. Without `DATABASE_URL`, the memory repository runs the offline agent
+once and serves the demo in-process.
 
 ## The approval line (and why)
 
@@ -68,15 +81,24 @@ npm run test
 npm run typecheck
 npm run lint
 
-# Migrations (generated, never auto-applied)
+# Migrations (generated; apply with db:migrate)
 npm run db:generate
+
+# Apply the committed Drizzle migrations to DATABASE_URL (idempotent)
+DATABASE_URL=postgresql://... npm run db:migrate
 
 # Seed the Postgres DB (idempotent; requires DATABASE_URL)
 DATABASE_URL=postgresql://... npm run db:seed
 
-# Run the deterministic offline agent over all 40 emails (no DB, no LLM).
-# Writes reports/process-report.offline.dry-run.json
+# Persist every email's classification, disposition, drafts, warnings and audit
+# rows to Postgres (idempotent). Without DATABASE_URL this is the dry-run report.
+DATABASE_URL=postgresql://... npm run process
 AGENT_MODE=offline npm run process -- --dry-run
+
+# End-to-end persistence check: migrate -> seed -> process -> assert counts,
+# E012/E003/E005, release E001 (stock+credit+audit), re-read on a fresh
+# connection, re-run process and assert no duplicates.
+DATABASE_URL=postgresql://... npm run verify:db
 
 # Start the UI (runs open in dev mode without Supabase env)
 npm run dev
@@ -86,13 +108,23 @@ npm run build && npm start
 
 ## Deployment (Vercel + Supabase)
 
-1. Create a Supabase project. Copy the **Session pooler** connection string into
-   `DATABASE_URL`, and set `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
-2. Import the repo into Vercel (it auto-detects Next.js; `vercel.json` pins the
+Setup order:
+
+1. Create a Supabase project.
+2. Copy the **Session pooler** connection string into `DATABASE_URL`, and set
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
+   `SUPABASE_SERVICE_ROLE_KEY`.
+3. `DATABASE_URL=... npm run db:migrate` — apply the committed migrations.
+4. `DATABASE_URL=... npm run db:seed` — load the ERP snapshot + inbox.
+5. `DATABASE_URL=... npm run process` — persist classifications, drafts, warnings
+   and audit rows.
+6. Import the repo into Vercel (it auto-detects Next.js; `vercel.json` pins the
    build). Add the same env vars in the Vercel project settings.
-3. Run `npm run db:seed` once against `DATABASE_URL` to load the ERP snapshot.
-4. Enable the Supabase **email** auth provider and create a user to sign in.
+7. Enable the Supabase **email** auth provider and create a user to sign in.
+
+`npm run verify:db` runs migrate → seed → process → assertions → a release →
+fresh-connection re-read → idempotency check, so it's the one command to prove a
+deployment's database is wired correctly.
 
 CI runs `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test` and
 `npm run build` on every push and PR (`.github/workflows/ci.yml`). A weekly
@@ -115,10 +147,11 @@ sequence; OpenRouter mode exposes them as function-calling tools.
 
 ## Where the audit lives
 
-`/audit` in the UI, `src/repository/memory.ts` in the demo store, and the
-`audit_log` table (`src/db/schema.ts`) in a real deployment. Every agent action,
-every human release/reject/edit and every system side-effect (stock allocation,
-credit consumption) writes a row with `actor`, `action` and `detail`.
+`/audit` in the UI, and the `audit_log` table (`src/db/schema.ts`) in the
+Postgres store (the in-memory demo store keeps it in `src/repository/memory.ts`).
+Every agent action, every human release/reject/edit and every system side-effect
+(stock allocation, credit consumption) writes a row with `actor`, `action` and
+`detail`.
 
 ## Data
 

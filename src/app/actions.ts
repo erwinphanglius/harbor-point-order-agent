@@ -22,7 +22,7 @@ function revalidateAll(emailId?: string): void {
 }
 
 export async function releaseOrder(emailId: string, soNumber: string): Promise<ActionResponse> {
-  const r = getRepository().release(emailId, soNumber);
+  const r = await getRepository().release(emailId, soNumber);
   revalidateAll(emailId);
   return fromResult(r);
 }
@@ -32,25 +32,25 @@ export async function releaseWithEditsAction(
   soNumber: string,
   edits: ReleaseEdit,
 ): Promise<ActionResponse> {
-  const r = getRepository().releaseWithEdits(emailId, soNumber, edits);
+  const r = await getRepository().releaseWithEdits(emailId, soNumber, edits);
   revalidateAll(emailId);
   return fromResult(r);
 }
 
 export async function rejectOrder(emailId: string, soNumber: string | null, reason: string): Promise<ActionResponse> {
-  const r = getRepository().reject(emailId, soNumber, reason);
+  const r = await getRepository().reject(emailId, soNumber, reason);
   revalidateAll(emailId);
   return fromResult(r);
 }
 
 export async function markNoAction(emailId: string): Promise<ActionResponse> {
-  const r = getRepository().markNoAction(emailId);
+  const r = await getRepository().markNoAction(emailId);
   revalidateAll(emailId);
   return fromResult(r);
 }
 
 export async function bulkRelease(emailIds: string[]): Promise<ActionResponse> {
-  const results = getRepository().bulkRelease(emailIds);
+  const results = await getRepository().bulkRelease(emailIds);
   const failed = results.filter((r) => !r.result.ok);
   revalidateAll();
   if (failed.length === 0) return { ok: true, reasons: [] };
@@ -61,7 +61,7 @@ export async function bulkRelease(emailIds: string[]): Promise<ActionResponse> {
 }
 
 export async function approveChange(emailId: string): Promise<ActionResponse> {
-  const r = getRepository().approveChange(emailId);
+  const r = await getRepository().approveChange(emailId);
   revalidateAll(emailId);
   return fromResult(r);
 }

@@ -1,24 +1,26 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import { loadSnapshot, loadEmails, hasDataPack } from "../data/load.js";
-import { getDatabaseUrl, createDb } from "../db/index.js";
+import { getDatabaseUrl, createDb, type Db } from "../db/index.js";
 import * as s from "../db/schema.js";
+
+const isMain = process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false;
 
 function num(v: number): string {
   return v.toFixed(2);
 }
 
-async function main(): Promise<void> {
-  const url = getDatabaseUrl();
-  if (!url) {
-    console.error("DATABASE_URL is not set. Seed requires a Postgres database.");
-    process.exit(1);
-  }
+/**
+ * Idempotently load the ERP snapshot and inbox into Postgres. Stores the raw
+ * state the UI needs (customers, products, prices, stock, emails in "pending"
+ * review); `npm run process` then persists the agent's classification,
+ * disposition, drafts and audit rows.
+ */
+export async function seedDatabase(db: Db): Promise<void> {
   if (!hasDataPack()) {
-    console.error("Data pack not found under assessment/data-pack.");
-    process.exit(1);
+    throw new Error("Data pack not found under assessment/data-pack.");
   }
 
-  const db = createDb(url);
   const snap = loadSnapshot();
   const emails = loadEmails();
 
@@ -103,16 +105,30 @@ async function main(): Promise<void> {
         attachments: JSON.stringify(e.attachments ?? []),
         reviewStatus: "pending",
       })
-      .onConflictDoUpdate({ target: s.emails.emailId, set: { reviewStatus: "pending" } });
+      .onConflictDoNothing();
+  }
+}
+
+async function main(): Promise<void> {
+  const url = getDatabaseUrl();
+  if (!url) {
+    console.error("DATABASE_URL is not set. Seed requires a Postgres database.");
+    process.exit(1);
   }
 
-  // Verify a round-trip read so this is not a no-op.
-  const count = await db.select({ c: s.customers.customerId }).from(s.customers);
-  console.log(`Seed complete. customers=${count.length} emails=${emails.length}`);
+  const db = createDb(url);
+  await seedDatabase(db);
+
+  const emailCount = await db.select({ c: s.emails.emailId }).from(s.emails);
+  const orderCount = await db.select({ c: s.salesOrders.soNumber }).from(s.salesOrders);
+  console.log(`Seed complete. emails=${emailCount.length} orders=${orderCount.length}`);
+  console.log("Run `npm run process` (with DATABASE_URL) to persist classifications, drafts and audit rows.");
   process.exit(0);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (isMain) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

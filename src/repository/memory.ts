@@ -1,4 +1,4 @@
-import type { Email, ErpSnapshot, OrderLineProposal } from "../core/types.js";
+import type { Email, ErpSnapshot, OrderLineProposal, ProcessingResult } from "../core/types.js";
 import { runOffline } from "../agent/offline.js";
 import { validateRelease, validateChangeApproval } from "../core/release.js";
 import { resolveUnitPrice } from "../core/pricing.js";
@@ -28,6 +28,7 @@ function maxOrderNumber(snapshot: ErpSnapshot): number {
 
 export class MemoryRepository implements Repository {
   private snapshot: ErpSnapshot;
+  private results: ProcessingResult[];
   private items: InboxItem[];
   private byId: Map<string, InboxItem>;
   private audit: AuditRecord[] = [];
@@ -37,18 +38,18 @@ export class MemoryRepository implements Repository {
   constructor(snapshot: ErpSnapshot, emails: Email[], releaseDate = "2026-11-02") {
     this.snapshot = snapshot;
     this.releaseDate = releaseDate;
+    this.results = runOffline(emails, this.snapshot, this.releaseDate);
     this.items = this.buildItems(emails);
     this.byId = new Map(this.items.map((i) => [i.email.emailId, i]));
     this.seedAudit();
   }
 
   private buildItems(emails: Email[]): InboxItem[] {
-    const results = runOffline(emails, this.snapshot, this.releaseDate);
     const byEmail = new Map(emails.map((e) => [e.emailId, e]));
     let nextSo = maxOrderNumber(this.snapshot) + 1;
 
     const items: InboxItem[] = [];
-    for (const result of results) {
+    for (const result of this.results) {
       const email = byEmail.get(result.emailId);
       if (!email) continue;
       const drafts: DraftState[] = [];
@@ -102,22 +103,26 @@ export class MemoryRepository implements Repository {
     });
   }
 
-  listInbox(): InboxItem[] {
+  async processInbox(): Promise<ProcessingResult[]> {
+    return this.results;
+  }
+
+  async listInbox(): Promise<InboxItem[]> {
     return [...this.items].sort((a, b) => a.email.receivedAt.localeCompare(b.email.receivedAt));
   }
 
-  getEmail(emailId: string): InboxItem | null {
+  async getEmail(emailId: string): Promise<InboxItem | null> {
     return this.byId.get(emailId) ?? null;
   }
 
-  listAudit(filter?: { emailId?: string; actor?: Actor }): AuditRecord[] {
+  async listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]> {
     const list = this.audit
       .filter((a) => (!filter?.emailId || a.emailId === filter.emailId))
       .filter((a) => (!filter?.actor || a.actor === filter.actor));
     return [...list].sort((a, b) => b.id - a.id);
   }
 
-  listShipTos(customerId: string): ShipToOption[] {
+  async listShipTos(customerId: string): Promise<ShipToOption[]> {
     return this.snapshot.shipTos
       .filter((s) => s.customerId === customerId)
       .map((s) => ({ shipToId: s.shipToId, name: s.name, address: s.address, isDefault: s.isDefault }));
@@ -182,7 +187,7 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [], orderValue: v.orderValue };
   }
 
-  release(emailId: string, soNumber: string): ActionResult {
+  async release(emailId: string, soNumber: string): Promise<ActionResult> {
     const item = this.byId.get(emailId);
     const draft = item?.drafts.find((d) => d.soNumber === soNumber);
     if (!item || !draft) return { ok: false, reasons: ["Draft not found"] };
@@ -192,13 +197,12 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [] };
   }
 
-  releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): ActionResult {
+  async releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult> {
     const item = this.byId.get(emailId);
     const draft = item?.drafts.find((d) => d.soNumber === soNumber);
     if (!item || !draft) return { ok: false, reasons: ["Draft not found"] };
     if (draft.status !== "DRAFT") return { ok: false, reasons: [`Draft ${draft.soNumber} is already ${draft.status}`] };
 
-    // Rebuild the proposal from the edits and re-resolve current prices.
     const editedLines: OrderLineProposal[] = edits.lines.map((e, idx) => {
       const original = draft.lines.find((l) => l.sku === e.sku);
       const price = resolveUnitPrice(e.sku, draft.customerId, this.releaseDate, this.snapshot.prices, this.snapshot.products);
@@ -236,7 +240,7 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [] };
   }
 
-  reject(emailId: string, soNumber: string | null, reason: string): ActionResult {
+  async reject(emailId: string, soNumber: string | null, reason: string): Promise<ActionResult> {
     const item = this.byId.get(emailId);
     if (!item) return { ok: false, reasons: ["Email not found"] };
     if (soNumber) {
@@ -253,7 +257,7 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [] };
   }
 
-  markNoAction(emailId: string): ActionResult {
+  async markNoAction(emailId: string): Promise<ActionResult> {
     const item = this.byId.get(emailId);
     if (!item) return { ok: false, reasons: ["Email not found"] };
     item.emailState = "no_action";
@@ -261,7 +265,7 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [] };
   }
 
-  bulkRelease(emailIds: string[]): { emailId: string; result: ActionResult }[] {
+  async bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]> {
     const out: { emailId: string; result: ActionResult }[] = [];
     for (const emailId of emailIds) {
       const item = this.byId.get(emailId);
@@ -288,7 +292,7 @@ export class MemoryRepository implements Repository {
     return out;
   }
 
-  approveChange(emailId: string): ActionResult {
+  async approveChange(emailId: string): Promise<ActionResult> {
     const item = this.byId.get(emailId);
     if (!item) return { ok: false, reasons: ["Email not found"] };
     const proposal = item.result.changeProposal;
@@ -300,7 +304,7 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [] };
   }
 
-  getSnapshot(): ErpSnapshot {
+  async getSnapshot(): Promise<ErpSnapshot> {
     return this.snapshot;
   }
 }

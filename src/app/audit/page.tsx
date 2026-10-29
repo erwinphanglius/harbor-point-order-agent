@@ -20,8 +20,8 @@ export default async function AuditPage({
   const actorFilter = (sp.actor as Actor | undefined) || undefined;
 
   const repo = getRepository();
-  const items = repo.listInbox();
-  const audit = repo.listAudit({ emailId: emailFilter, actor: actorFilter });
+  const items = await repo.listInbox();
+  const audit = await repo.listAudit({ emailId: emailFilter, actor: actorFilter });
 
   return (
     <div>

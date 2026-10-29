@@ -7,7 +7,9 @@ export function getDatabaseUrl(): string | null {
 }
 
 export function createDb(url: string) {
-  const pool = new Pool({ connectionString: url });
+  // Single-connection pool: safe against a PGlite/local server with
+  // max_connections=1, and correct for the low-concurrency review workload.
+  const pool = new Pool({ connectionString: url, max: 1 });
   return drizzle(pool, { schema });
 }
 

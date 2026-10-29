@@ -91,5 +91,32 @@ Phase 3–5 (UI/deploy):
 10. **Memory repository** returned an undeclared `orderValue` property; fixed
     the return type.
 
+Phase 6 (persistence) — a real review finding:
+
+11. **The UI served memory while the schema was unused.** `src/repository/` only
+    had `memory.ts`, so a deployed app served an in-memory store: approvals and
+    releases did not persist across serverless instances, and the Drizzle schema
+    (`sales_orders`, `audit_log`, …) was never read or written. This was a real
+    defect — the persistence layer existed only as a seed script. Fix: added
+    `src/repository/pg.ts`, a Drizzle implementation of the same async
+    `Repository` interface, made the interface async, routed pages/actions/CLI
+    through one factory (`src/lib/repo.ts`) that picks Postgres when
+    `DATABASE_URL` is set, extended the schema with the columns the repository
+    genuinely needed (`sales_order_lines.description`/`price_source`,
+    `sales_orders.rejected_reason`, `emails.customer_id`/`issues_json`/
+    `notes_json`/`change_proposal_json`/`duplicate_of_email_id`/`reject_reason`,
+    `audit_log.dedupe_key` + a `(so_number, line_no)` unique index) and
+    regenerated the migration. `npm run process` now persists idempotently;
+    `npm run db:migrate` applies migrations; `npm run verify:db` proves the whole
+    path (migrate → seed → process → assertions → release E001 → fresh-connection
+    re-read → re-process with no duplicates) against a real database.
+12. **`verify:db` crashed on `DATABASE_URL` first time** because `seed.ts` still
+    ran its `main()` on import (an unguarded top-level side effect). Fixed by
+    guarding the CLI entrypoint behind an `import.meta` main-module check.
+13. **Local Postgres (PGlite) resets connections** when a `pg.Pool` opens more
+    than its `max_connections` (default 1). Fixed by pinning the pool to
+    `max: 1` and retrying the fresh-connection re-read, so the same code works
+    against PGlite, a single-slot local server and `postgres:16` in CI.
+
 Every one of these was caught by either a test, `tsc`, the production build, or
-a `curl` smoke-check, and corrected before the commit.
+`npm run verify:db`, and corrected before the commit.

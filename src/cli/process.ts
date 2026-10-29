@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { loadSnapshot, loadEmails, hasDataPack } from "../data/load.js";
 import { runOffline } from "../agent/offline.js";
 import { runOpenRouter } from "../agent/openrouter.js";
+import { getRepository, isPgConfigured } from "../lib/repo.js";
 import type { ProcessingResult } from "../core/types.js";
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -18,6 +19,19 @@ function summarize(results: ProcessingResult[]): Record<string, number> {
   return counts;
 }
 
+function assignSoNumbers(results: ProcessingResult[], maxSo: number): number {
+  let cursor = maxSo;
+  let draftCount = 0;
+  for (const r of results) {
+    for (const d of r.drafts) {
+      cursor += 1;
+      draftCount += 1;
+      (d as { soNumber?: string }).soNumber = `SO-${cursor}`;
+    }
+  }
+  return draftCount;
+}
+
 async function main(): Promise<void> {
   if (!hasDataPack()) {
     console.error("Data pack not found under assessment/data-pack.");
@@ -26,6 +40,9 @@ async function main(): Promise<void> {
 
   const snapshot = loadSnapshot();
   const emails = loadEmails();
+  const maxSo = Math.max(...snapshot.orders.map((o) => parseInt(o.soNumber.replace(/\D/g, ""), 10) || 0));
+
+  const persist = !DRY_RUN && isPgConfigured();
 
   let results: ProcessingResult[];
   if (AGENT_MODE === "openrouter") {
@@ -35,26 +52,21 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     results = await runOpenRouter(emails, snapshot, ORDER_DATE, apiKey, process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini");
+  } else if (persist) {
+    // Postgres-backed run: the repository factory persists classification,
+    // disposition, drafts/proposals, warnings and audit rows idempotently.
+    results = await getRepository().processInbox();
   } else {
     results = runOffline(emails, snapshot, ORDER_DATE);
   }
 
-  // Assign SO numbers to drafts (continuing after the existing SO-24xxx range).
-  const maxSo = Math.max(...snapshot.orders.map((o) => parseInt(o.soNumber.replace(/\D/g, ""), 10) || 0));
-  let draftCursor = maxSo;
-  let draftCount = 0;
-  for (const r of results) {
-    for (const d of r.drafts) {
-      draftCursor += 1;
-      draftCount += 1;
-      (d as { soNumber?: string }).soNumber = `SO-${draftCursor}`;
-    }
-  }
+  const draftCount = assignSoNumbers(results, maxSo);
 
   const report = {
     generatedAt: new Date().toISOString(),
     agentMode: AGENT_MODE,
     dryRun: DRY_RUN,
+    persisted: persist,
     orderDate: ORDER_DATE,
     totalEmails: results.length,
     draftOrdersCreated: draftCount,
@@ -68,6 +80,7 @@ async function main(): Promise<void> {
 
   console.log(`agent mode : ${AGENT_MODE}`);
   console.log(`dry run    : ${DRY_RUN}`);
+  console.log(`persisted  : ${persist}`);
   console.log(`emails     : ${results.length}`);
   console.log(`drafts     : ${draftCount}`);
   console.log(`summary    : ${JSON.stringify(summarize(results))}`);

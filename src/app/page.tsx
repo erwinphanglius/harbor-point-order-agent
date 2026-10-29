@@ -3,9 +3,9 @@ import { InboxClient, type InboxRow } from "@/components/inbox-client";
 
 export const dynamic = "force-dynamic";
 
-export default function InboxPage() {
+export default async function InboxPage() {
   const repo = getRepository();
-  const items = repo.listInbox();
+  const items = await repo.listInbox();
 
   const rows: InboxRow[] = items.map((item) => ({
     emailId: item.email.emailId,

@@ -9,11 +9,12 @@ export const dynamic = "force-dynamic";
 export default async function EmailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const repo = getRepository();
-  const item = repo.getEmail(id);
+  const item = await repo.getEmail(id);
   if (!item) notFound();
 
-  const trace = buildTrace(item.result, repo.getSnapshot());
-  const shipTos = item.result.customerId ? repo.listShipTos(item.result.customerId) : [];
+  const snapshot = await repo.getSnapshot();
+  const trace = buildTrace(item.result, snapshot);
+  const shipTos = item.result.customerId ? await repo.listShipTos(item.result.customerId) : [];
 
   return (
     <div>

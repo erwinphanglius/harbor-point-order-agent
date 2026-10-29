@@ -5,6 +5,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const customers = pgTable("customers", {
@@ -86,19 +87,28 @@ export const salesOrders = pgTable("sales_orders", {
   createdByAgent: boolean("created_by_agent").notNull().default(false),
   releasedAt: timestamp("released_at"),
   sourceEmailId: text("source_email_id"),
+  rejectedReason: text("rejected_reason"),
 });
 
-export const salesOrderLines = pgTable("sales_order_lines", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  soNumber: text("so_number")
-    .notNull()
-    .references(() => salesOrders.soNumber),
-  lineNo: integer("line_no").notNull(),
-  sku: text("sku").notNull(),
-  qtyOrdered: numeric("qty_ordered").notNull(),
-  qtyShipped: numeric("qty_shipped").notNull().default("0"),
-  unitPrice: numeric("unit_price"),
-});
+export const salesOrderLines = pgTable(
+  "sales_order_lines",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    soNumber: text("so_number")
+      .notNull()
+      .references(() => salesOrders.soNumber),
+    lineNo: integer("line_no").notNull(),
+    sku: text("sku").notNull(),
+    description: text("description"),
+    qtyOrdered: numeric("qty_ordered").notNull(),
+    qtyShipped: numeric("qty_shipped").notNull().default("0"),
+    unitPrice: numeric("unit_price"),
+    priceSource: text("price_source"),
+  },
+  (t) => [
+    uniqueIndex("sales_order_lines_so_line_idx").on(t.soNumber, t.lineNo),
+  ],
+);
 
 export const emails = pgTable("emails", {
   emailId: text("email_id").primaryKey(),
@@ -112,6 +122,12 @@ export const emails = pgTable("emails", {
   classification: text("classification"),
   disposition: text("disposition"),
   reviewStatus: text("review_status").notNull().default("pending"),
+  customerId: text("customer_id"),
+  issuesJson: text("issues_json"),
+  notesJson: text("notes_json"),
+  changeProposalJson: text("change_proposal_json"),
+  duplicateOfEmailId: text("duplicate_of_email_id"),
+  rejectReason: text("reject_reason"),
 });
 
 export const auditLog = pgTable("audit_log", {
@@ -121,6 +137,7 @@ export const auditLog = pgTable("audit_log", {
   actor: text("actor").notNull().default("agent"),
   action: text("action").notNull(),
   detail: text("detail").notNull(),
+  dedupeKey: text("dedupe_key").unique(),
 });
 
 export const reviewItems = pgTable("review_items", {
