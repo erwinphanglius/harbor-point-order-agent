@@ -156,9 +156,11 @@ is exercised when env is present.
 ## T13 — Deploy + CI
 
 **Spec.** `.env.example` documenting every variable; `vercel.json` whose
-`buildCommand` runs `npm run check` (lint, typecheck, tests) before `next build`,
-so a red check fails the deploy; a daily Vercel cron to `/api/keepalive` that
-runs `select 1` against Supabase so the free tier does not pause.
+`buildCommand` runs `npm run check` (lint, typecheck, tests), then
+`npm run db:setup` (migrate, seed, one agent run — idempotent, skipped without
+`DATABASE_URL`), then `next build`, so a red check or a broken database wiring
+fails the deploy; a daily Vercel cron to `/api/keepalive` that runs `select 1`
+against Supabase so the free tier does not pause.
 
 **Acceptance.** `npm run check` passes, the Vercel build runs it before the
 build, and `/api/keepalive` returns ok with a reachable database.

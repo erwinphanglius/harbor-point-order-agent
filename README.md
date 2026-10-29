@@ -110,17 +110,22 @@ npm run build && npm start
 
 Setup order:
 
-1. Create a Supabase project.
-2. Copy the **Session pooler** connection string into `DATABASE_URL`, and set
-   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
-   `SUPABASE_SERVICE_ROLE_KEY`.
-3. `DATABASE_URL=... npm run db:migrate` — apply the committed migrations.
-4. `DATABASE_URL=... npm run db:seed` — load the ERP snapshot + inbox.
-5. `DATABASE_URL=... npm run process` — persist classifications, drafts, warnings
-   and audit rows.
-6. Import the repo into Vercel (it auto-detects Next.js; `vercel.json` pins the
-   build). Add the same env vars in the Vercel project settings.
-7. Enable the Supabase **email** auth provider and create a user to sign in.
+1. Create a Supabase project (any region; Singapore is closest to Jakarta).
+2. Project settings → Database → **Connection string → Session pooler**. Put it
+   in `DATABASE_URL`. Set `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` from
+   Project settings → API.
+3. Import the repo into Vercel and add the same variables to the Vercel project
+   (Production and Preview). The build runs `npm run check`, then
+   `npm run db:setup`, then `next build` — `db:setup` applies the migrations,
+   seeds the ERP snapshot and the 40 emails, and runs the agent once. Every step
+   is idempotent, so a redeploy does not duplicate rows. Without `DATABASE_URL`
+   it is skipped.
+4. Enable the Supabase **email** provider (Authentication → Providers) and add a
+   user under Authentication → Users to sign in with.
+
+Running the setup by hand instead of at build time works the same way:
+`npm run db:migrate`, `npm run db:seed`, `npm run process`.
 
 `npm run verify:db` runs migrate → seed → process → assertions → a release →
 fresh-connection re-read → idempotency check, so it's the one command to prove a
