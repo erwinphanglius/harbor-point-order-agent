@@ -1,7 +1,7 @@
 import { loadSnapshot, loadEmails, hasDataPack } from "../data/load.js";
 import { MemoryRepository } from "../repository/memory.js";
 import { PgRepository } from "../repository/pg.js";
-import { createDb } from "../db/index.js";
+import { getSharedDb } from "../db/index.js";
 import type { Repository } from "../repository/types.js";
 
 const globalStore = globalThis as unknown as { __repo?: Repository };
@@ -19,7 +19,8 @@ export function isPgConfigured(): boolean {
 export function getRepository(): Repository {
   if (!globalStore.__repo) {
     if (isPgConfigured()) {
-      const db = createDb(process.env.DATABASE_URL!);
+      const db = getSharedDb();
+      if (!db) throw new Error("DATABASE_URL is set but the database pool could not be created");
       globalStore.__repo = new PgRepository(db);
     } else {
       if (!hasDataPack()) {

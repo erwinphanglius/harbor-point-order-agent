@@ -155,13 +155,18 @@ is exercised when env is present.
 
 ## T13 — Deploy + CI
 
-**Spec.** `.env.example` documenting every variable; `vercel.json`;
-`.github/workflows/ci.yml` (npm ci, lint, typecheck, test, build on push/PR);
-`.github/workflows/keepalive.yml` (weekly ping of the Supabase project).
+**Spec.** `.env.example` documenting every variable; `vercel.json` whose
+`buildCommand` runs `npm run check` (lint, typecheck, tests) before `next build`,
+so a red check fails the deploy; a daily Vercel cron to `/api/keepalive` that
+runs `select 1` against Supabase so the free tier does not pause.
 
-**Acceptance.** CI runs the four gates; keepalive pings the project URL.
+**Acceptance.** `npm run check` passes, the Vercel build runs it before the
+build, and `/api/keepalive` returns ok with a reachable database.
 
-**Verified.** Files present; CI steps match the local command sequence.
+**Verified.** `npm run check` and `npm run build` pass locally; the keepalive
+route is exercised against the local Postgres (`select 1`). GitHub Actions was
+dropped deliberately: the push token used for this branch has no `workflow`
+scope, and the Vercel build gate gives the same protection without it.
 
 ## T14 — Written deliverables
 

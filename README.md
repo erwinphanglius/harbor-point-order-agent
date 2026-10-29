@@ -126,9 +126,11 @@ Setup order:
 fresh-connection re-read → idempotency check, so it's the one command to prove a
 deployment's database is wired correctly.
 
-CI runs `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test` and
-`npm run build` on every push and PR (`.github/workflows/ci.yml`). A weekly
-keepalive workflow pings the Supabase project so the free tier does not pause.
+CI/CD is the Vercel pipeline: every push to `main` installs, then runs
+`npm run check` (lint, typecheck, the full test suite) before `next build`, so a
+failing check fails the deploy instead of shipping. A daily Vercel cron hits
+`/api/keepalive`, which runs `select 1` against Supabase so the free tier does
+not pause after a week of inactivity.
 
 ## Agent tool list
 

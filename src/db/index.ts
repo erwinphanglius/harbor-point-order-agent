@@ -14,3 +14,19 @@ export function createDb(url: string) {
 }
 
 export type Db = ReturnType<typeof createDb>;
+
+const globalStore = globalThis as unknown as { __sharedDb?: Db };
+
+/**
+ * One connection pool per process, shared by the repository and any route that
+ * needs a cheap query (e.g. the keepalive cron). Avoids opening a second pool
+ * against a database with a single connection slot.
+ */
+export function getSharedDb(): Db | null {
+  const url = getDatabaseUrl();
+  if (!url) return null;
+  if (!globalStore.__sharedDb) {
+    globalStore.__sharedDb = createDb(url);
+  }
+  return globalStore.__sharedDb;
+}
