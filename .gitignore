@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+*.tsbuildinfo
+
+# transient non-dry-run process report (CI/local with DATABASE_URL)
+reports/process-report.offline.json

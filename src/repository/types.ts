@@ -1,0 +1,72 @@
+import type { Email, ErpSnapshot, OrderLineProposal, ProcessingResult } from "../core/types.js";
+
+export type Actor = "agent" | "system" | "human";
+
+export interface AuditRecord {
+  id: number;
+  timestamp: string;
+  emailId: string | null;
+  actor: Actor;
+  action: string;
+  detail: string;
+}
+
+export type DraftStatus = "DRAFT" | "RELEASED" | "REJECTED";
+
+export interface DraftState {
+  soNumber: string;
+  emailId: string;
+  customerId: string;
+  customerName: string;
+  shipToId: string;
+  customerPo: string;
+  requestedDate: string | null;
+  lines: OrderLineProposal[];
+  orderTotal: number;
+  status: DraftStatus;
+  releasedAt: string | null;
+  rejectReason: string | null;
+}
+
+export interface ShipToOption {
+  shipToId: string;
+  name: string;
+  address: string;
+  isDefault: boolean;
+}
+
+export interface InboxItem {
+  email: Email;
+  result: ProcessingResult;
+  drafts: DraftState[];
+  amount: number | null;
+  emailState: "pending" | "no_action";
+  emailRejectReason: string | null;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  reasons: string[];
+}
+
+export interface ReleaseEdit {
+  lines: { sku: string; quantity: number }[];
+  shipToId: string;
+  requestedDate: string | null;
+}
+
+export interface Repository {
+  /** Run the agent over the inbox and persist the result idempotently. */
+  processInbox(): Promise<ProcessingResult[]>;
+  listInbox(): Promise<InboxItem[]>;
+  getEmail(emailId: string): Promise<InboxItem | null>;
+  listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]>;
+  listShipTos(customerId: string): Promise<ShipToOption[]>;
+  release(emailId: string, soNumber: string): Promise<ActionResult>;
+  releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult>;
+  reject(emailId: string, soNumber: string | null, reason: string): Promise<ActionResult>;
+  markNoAction(emailId: string): Promise<ActionResult>;
+  bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]>;
+  approveChange(emailId: string): Promise<ActionResult>;
+  getSnapshot(): Promise<ErpSnapshot>;
+}
