@@ -53,6 +53,9 @@ export function RunPanel({ status: initial, enabled }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ limit: BATCH }),
         });
+        if (!res.headers.get("content-type")?.includes("application/json")) {
+          throw new Error("Your session expired. Sign in again and press Run.");
+        }
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? `Run failed (${res.status})`);
         setStatus({
