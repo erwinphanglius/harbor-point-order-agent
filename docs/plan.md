@@ -75,7 +75,8 @@ discontinued, price); (4) false-escalation rate; (5) injection attempts detected
 
 - **PHASE 1 — scaffold + schema + seed + core rules** (this document + T1/T2/T3/T5).
 - **PHASE 2 — agent + tools + offline engine + approval policy + tests** (T4/T6 + tests).
-- **PHASE 3 (later) — UI + live URL + release workflow** (not in scope now).
+- **PHASE 3 — UI + live URL + release workflow** (shipped: inbox, email detail,
+  audit trail, Supabase auth, release/allocate/credit transaction, Vercel deploy).
 
 ## 5. Verification
 

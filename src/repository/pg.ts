@@ -293,11 +293,13 @@ export class PgRepository implements Repository {
   }
 
   async listInbox(): Promise<InboxItem[]> {
-    const snapshot = await this.loadSnapshot();
-    const emailRows = await this.db.select().from(s.emails).orderBy(asc(s.emails.receivedAt));
-    const orderRows = await this.db.select().from(s.salesOrders);
-    const lineRows = await this.db.select().from(s.salesOrderLines).orderBy(asc(s.salesOrderLines.lineNo));
-    const auditRows = await this.db.select().from(s.auditLog);
+    const [snapshot, emailRows, orderRows, lineRows, auditRows] = await Promise.all([
+      this.loadSnapshot(),
+      this.db.select().from(s.emails).orderBy(asc(s.emails.receivedAt)),
+      this.db.select().from(s.salesOrders),
+      this.db.select().from(s.salesOrderLines).orderBy(asc(s.salesOrderLines.lineNo)),
+      this.db.select().from(s.auditLog),
+    ]);
 
     const linesByOrder = new Map<string, (typeof s.salesOrderLines.$inferSelect)[]>();
     for (const l of lineRows) {

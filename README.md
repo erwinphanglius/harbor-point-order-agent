@@ -6,6 +6,15 @@ and **drafts** sales orders that a human releases with one click. Anything risky
 is escalated with no draft at all, and every decision is written to an
 append-only audit trail.
 
+## Live demo
+
+<https://harbor-point-order-agent-mu.vercel.app>
+
+Sign in with `ops@harborpoint.demo` / `HarborPoint2026!`. The database seeds
+itself on deploy, so the inbox always holds the 40 emails from 2 November 2026.
+Open **E012** to see a prompt-injection attempt forced to human review, and
+**E024 / E025** for the expired and unsupported price claims.
+
 ## What it is
 
 - **Inbox** (`/`) — every email with time, sender, subject, classification and a
@@ -123,6 +132,10 @@ Setup order:
    it is skipped.
 4. Enable the Supabase **email** provider (Authentication → Providers) and add a
    user under Authentication → Users to sign in with.
+5. Set the Vercel **Function Region** (Project → Settings → Functions) to the
+   same region as the Supabase project — `sin1` for Singapore. Each page makes a
+   handful of database round trips, so a cross-continent function region adds a
+   few hundred milliseconds to every navigation.
 
 Running the setup by hand instead of at build time works the same way:
 `npm run db:migrate`, `npm run db:seed`, `npm run process`.
