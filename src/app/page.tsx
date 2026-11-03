@@ -37,7 +37,7 @@ export default async function InboxPage() {
     draftCount: item.drafts.length,
     canRelease: item.drafts.some((d) => d.status === "DRAFT"),
     processed: item.processed,
-      urgency: urgencyOf(item.email.subject, item.email.body),
+      urgency: item.result.disposition === "IGNORE" ? null : urgencyOf(item.email.subject, item.email.body),
       why: why ? why.replace(/\s+/g, " ").slice(0, 110) : null,
     };
   });
