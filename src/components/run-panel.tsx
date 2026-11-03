@@ -34,8 +34,19 @@ export function RunPanel({ status: initial, enabled }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const stop = useRef(false);
+  const resumed = useRef(false);
 
   useEffect(() => setStatus(initial), [initial]);
+
+  // Refreshing mid-run kills the browser loop after the batch in flight, which
+  // leaves a half-processed inbox. Opening the page on a partial run picks it
+  // back up instead of waiting for a second click.
+  useEffect(() => {
+    if (resumed.current || !enabled || running || resetting) return;
+    if (status.processed === 0 || status.remaining === 0) return;
+    resumed.current = true;
+    void run();
+  }, [enabled, running, resetting, status.processed, status.remaining]);
 
   const pct = status.total === 0 ? 0 : Math.round((status.processed / status.total) * 100);
   const done = status.remaining === 0 && status.processed > 0;
