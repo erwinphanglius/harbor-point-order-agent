@@ -23,6 +23,7 @@ import type {
   AgentRunUsage,
   AgentStatus,
   AuditRecord,
+  Dashboard,
   DraftState,
   InboxItem,
   ReleaseEdit,
@@ -556,6 +557,70 @@ export class PgRepository implements Repository {
     return rows.map((a) => ({ shipToId: a.shipToId, name: a.name, address: a.address, isDefault: a.isDefault }));
   }
 
+  async getDashboard(): Promise<Dashboard> {
+    const [inv, prods, custs, orders, lines] = await Promise.all([
+      this.db.select().from(s.inventory),
+      this.db.select().from(s.products),
+      this.db.select().from(s.customers),
+      this.db.select().from(s.salesOrders),
+      this.db.select().from(s.salesOrderLines),
+    ]);
+
+    const productBySku = new Map(prods.map((p) => [p.sku, p]));
+    const customerName = new Map(custs.map((c) => [c.customerId, c.name]));
+    const valueByOrder = new Map<string, number>();
+    for (const l of lines) {
+      valueByOrder.set(l.soNumber, (valueByOrder.get(l.soNumber) ?? 0) + toNum(l.qtyOrdered) * toNum(l.unitPrice));
+    }
+
+    const inventory = inv
+      .map((i) => ({
+        sku: i.sku,
+        name: productBySku.get(i.sku)?.name ?? i.sku,
+        onHand: toNum(i.onHand),
+        allocated: toNum(i.allocated),
+        available: toNum(i.available),
+        status: productBySku.get(i.sku)?.status ?? "active",
+      }))
+      .sort((a, b) => a.available - b.available || a.sku.localeCompare(b.sku));
+
+    const customers = custs
+      .map((c) => ({
+        customerId: c.customerId,
+        name: c.name,
+        creditLimit: toNum(c.creditLimit),
+        openBalance: toNum(c.openBalance),
+        headroom: round2(toNum(c.creditLimit) - toNum(c.openBalance)),
+        status: c.status,
+      }))
+      .sort((a, b) => a.headroom - b.headroom);
+
+    const orderRows = orders
+      .map((o) => ({
+        soNumber: o.soNumber,
+        customerName: customerName.get(o.customerId) ?? o.customerId,
+        status: o.releasedAt ? "RELEASED" : o.draft ? "DRAFT" : o.status,
+        total: round2(valueByOrder.get(o.soNumber) ?? 0),
+        releasedAt: o.releasedAt ? o.releasedAt.toISOString() : null,
+      }))
+      .sort((a, b) => Number(a.status === "DRAFT") - Number(b.status === "DRAFT") || b.soNumber.localeCompare(a.soNumber))
+      .slice(0, 25);
+
+    return {
+      inventory,
+      customers,
+      orders: orderRows,
+      totals: {
+        products: inventory.length,
+        lowStock: inventory.filter((i) => i.available < 10).length,
+        creditLimit: round2(customers.reduce((n, c) => n + c.creditLimit, 0)),
+        creditUsed: round2(customers.reduce((n, c) => n + c.openBalance, 0)),
+        openOrders: orderRows.filter((o) => o.status === "DRAFT").length,
+        released: orderRows.filter((o) => o.status === "RELEASED").length,
+      },
+    };
+  }
+
   async getSnapshot(): Promise<ErpSnapshot> {
     return this.loadSnapshot();
   }
@@ -648,7 +713,11 @@ export class PgRepository implements Repository {
     if (!v.ok) return { ok: false, reasons: v.issues.map((i) => i.message) };
 
     await this.applyRelease(emailId, order, lines, v.orderValue, snapshot);
-    return { ok: true, reasons: [] };
+    return {
+      ok: true,
+      reasons: [],
+      detail: `Released ${order.soNumber} · ${lines.reduce((n, l) => n + l.quantity, 0)} units allocated · $${v.orderValue} credit used`,
+    };
   }
 
   async releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult> {
@@ -699,7 +768,11 @@ export class PgRepository implements Repository {
     });
 
     await this.applyRelease(emailId, order, editedLines, v.orderValue, snapshot);
-    return { ok: true, reasons: [] };
+    return {
+      ok: true,
+      reasons: [],
+      detail: `Released ${soNumber} with edits · ${editedLines.reduce((n, l) => n + l.quantity, 0)} units allocated · $${v.orderValue} credit used`,
+    };
   }
 
   async reject(emailId: string, soNumber: string | null, reason: string): Promise<ActionResult> {
@@ -715,7 +788,7 @@ export class PgRepository implements Repository {
       await this.db.update(s.emails).set({ reviewStatus: "no_action", rejectReason: reason }).where(eq(s.emails.emailId, emailId));
       await this.insertAudit(emailId, "human", "rejected", `Rejected ${emailId}: ${reason}`);
     }
-    return { ok: true, reasons: [] };
+    return { ok: true, reasons: [], detail: `Rejected${soNumber ? ` ${soNumber}` : ""} — nothing released, stock and credit unchanged` };
   }
 
   async markNoAction(emailId: string): Promise<ActionResult> {
@@ -723,7 +796,7 @@ export class PgRepository implements Repository {
     if (email.length === 0) return { ok: false, reasons: ["Email not found"] };
     await this.db.update(s.emails).set({ reviewStatus: "no_action" }).where(eq(s.emails.emailId, emailId));
     await this.insertAudit(emailId, "human", "no_action", `Marked ${emailId} as no action`);
-    return { ok: true, reasons: [] };
+    return { ok: true, reasons: [], detail: "Marked no action — nothing released" };
   }
 
   async bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]> {

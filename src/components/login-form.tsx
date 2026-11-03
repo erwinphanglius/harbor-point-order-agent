@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Spinner } from "./ui";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("ops@harborpoint.demo");
+  const [password, setPassword] = useState("HarborPoint2026!");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -54,11 +55,15 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-70"
         >
-          Sign in
+          {pending && <Spinner className="h-4 w-4" />}
+          {pending ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      <p className="mt-3 text-center text-xs text-gray-400">
+          Demo — ops@harborpoint.demo · HarborPoint2026!
+        </p>
     </div>
   );
 }

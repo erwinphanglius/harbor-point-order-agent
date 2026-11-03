@@ -6,6 +6,7 @@ import type { Disposition } from "@/core/types.js";
 import { bulkRelease } from "@/app/actions";
 import { fmtMoney } from "@/lib/format";
 import { DispositionBadge } from "./badge";
+import { Spinner } from "./ui";
 
 export interface InboxRow {
   emailId: string;
@@ -20,6 +21,8 @@ export interface InboxRow {
   draftCount: number;
   canRelease: boolean;
   processed: boolean;
+  urgency: "today" | "urgent" | null;
+  why: string | null;
 }
 
 function senderLabel(r: InboxRow): string {
@@ -30,6 +33,7 @@ function senderLabel(r: InboxRow): string {
 
 const FILTERS: { key: string; label: string; disposition?: Disposition }[] = [
   { key: "all", label: "All" },
+  { key: "urgent", label: "Urgent" },
   { key: "AUTO_DRAFT", label: "Auto-draft", disposition: "AUTO_DRAFT" },
   { key: "PROPOSE_CHANGE", label: "Proposal", disposition: "PROPOSE_CHANGE" },
   { key: "ESCALATE", label: "Escalate", disposition: "ESCALATE" },
@@ -45,10 +49,20 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: rows.length, urgent: rows.filter((r) => r.urgency).length };
+    for (const r of rows) if (r.processed) c[r.disposition] = (c[r.disposition] ?? 0) + 1;
+    return c;
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (filter !== "all" && (!r.processed || r.disposition !== filter)) return false;
+    const list = rows.filter((r) => {
+      if (filter === "urgent") {
+        if (!r.urgency) return false;
+      } else if (filter !== "all" && (!r.processed || r.disposition !== filter)) {
+        return false;
+      }
       if (!q) return true;
       return (
         r.subject.toLowerCase().includes(q) ||
@@ -58,13 +72,13 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
         (r.customerName ?? "").toLowerCase().includes(q)
       );
     });
+    // Same-day promises first, then newest.
+    return [...list].sort((a, b) => {
+      const rank = (r: InboxRow) => (r.urgency === "today" ? 0 : r.urgency === "urgent" ? 1 : 2);
+      const byRank = rank(a) - rank(b);
+      return byRank !== 0 ? byRank : b.receivedAt.localeCompare(a.receivedAt);
+    });
   }, [rows, query, filter]);
-
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: rows.length };
-    for (const r of rows) if (r.processed) c[r.disposition] = (c[r.disposition] ?? 0) + 1;
-    return c;
-  }, [rows]);
 
   const releasableSelected = filtered.filter((r) => r.canRelease && selected.has(r.emailId));
 
@@ -82,7 +96,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
     if (ids.length === 0) return;
     startTransition(async () => {
       const res = await bulkRelease(ids);
-      setMessage(res.ok ? `Released ${ids.length} order(s).` : `Bulk release refused: ${res.reasons.join("; ")}`);
+      setMessage(res.ok ? `Released ${ids.length} order(s). Stock allocated and credit consumed — see the dashboard.` : `Bulk release refused: ${res.reasons.join("; ")}`);
       setSelected(new Set());
     });
   }
@@ -112,9 +126,10 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
             <button
               onClick={onBulkRelease}
               disabled={isPending}
-              className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="flex items-center gap-2 rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
-              Release {releasableSelected.length} selected
+              {isPending && <Spinner className="h-3.5 w-3.5" />}
+              {isPending ? "Releasing…" : `Release ${releasableSelected.length} selected`}
             </button>
           )}
         </div>
@@ -138,32 +153,48 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
           <tbody>
             {filtered.map((r) => (
               <tr key={r.emailId} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top">
                   {r.canRelease && (
                     <input type="checkbox" checked={selected.has(r.emailId)} onChange={() => toggle(r.emailId)} />
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-500">{r.receivedAt.slice(11, 16)}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top text-xs text-gray-500">{r.receivedAt.slice(11, 16)}</td>
+                <td className="px-3 py-2 align-top">
                   <Link href={`/emails/${r.emailId}`} className="text-blue-700 hover:underline">
                     {r.fromName}
                   </Link>
                   <div className="text-xs text-gray-400">{r.fromEmail}</div>
                 </td>
-                <td className="px-3 py-2">
-                  <Link href={`/emails/${r.emailId}`} className="hover:underline">
-                    {r.subject}
-                  </Link>
+                <td className="px-3 py-2 align-top">
+                  <div className="flex items-start gap-2">
+                    {r.urgency && (
+                      <span
+                        className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          r.urgency === "today" ? "bg-red-600 text-white" : "bg-orange-100 text-orange-800"
+                        }`}
+                      >
+                        {r.urgency === "today" ? "Today" : "Urgent"}
+                      </span>
+                    )}
+                    <Link href={`/emails/${r.emailId}`} className="hover:underline">
+                      {r.subject}
+                    </Link>
+                  </div>
+                  {r.why && r.processed && (
+                    <div className="mt-0.5 line-clamp-1 text-xs text-gray-500" title={r.why}>
+                      {r.why}
+                    </div>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-600">{senderLabel(r)}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 align-top text-xs text-gray-600">{senderLabel(r)}</td>
+                <td className="px-3 py-2 align-top">
                   {r.processed ? (
                     <DispositionBadge disposition={r.disposition} />
                   ) : (
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Not processed</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
+                <td className="px-3 py-2 align-top text-right">{fmtMoney(r.amount)}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
