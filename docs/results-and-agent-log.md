@@ -1,8 +1,28 @@
 # Results and agent log
 
-All counts below are read directly from
-`reports/process-report.offline.dry-run.json` (the deterministic offline run
-over all 40 emails, no LLM).
+Three sets of numbers matter here, and they come from different places:
+
+- **The outcome table below** is the deterministic offline run over all 40 emails (no LLM), from
+  `reports/process-report.offline.dry-run.json`. It is the version I can reproduce exactly.
+- **The live run section** right after it is the real model, on the deployed app, started from the UI.
+- **The corrections list at the end** is the honest log of what my coding agents got wrong while building it.
+
+## The live run (real model, from the app)
+
+Run from the deployed UI with **Run agent**, batches of 10:
+
+| What | Value |
+|---|---|
+| Emails processed | 40 / 40 |
+| Model | `glm-5.3-flash` via OpenCode Go (OpenRouter as fallback) |
+| Tokens | **184k input / 13.5k output** |
+| Cost at list price | **$0.03** for the full inbox |
+| Wall clock | 4m20s on the first batching (one request per email); about **2 minutes** at batches of 10 |
+| Audit events written | 46 for the inbox, plus one per human action |
+
+The point of showing cost and tokens in the UI is that a claim like "cheap enough to run per
+email" should be checkable by the person paying for it, not taken on trust.
+
 
 ## How the system handled the 40 emails
 
@@ -120,3 +140,30 @@ Phase 6 (persistence) — a real review finding:
 
 Every one of these was caught by either a test, `tsc`, the production build, or
 `npm run verify:db`, and corrected before the commit.
+
+Phase 3–4 (the demo):
+
+14. **"Approve change" was a convincing no-op.** The action wrote `reviewStatus`
+    and an audit row and returned success — but never touched the sales order.
+    It typechecked, it passed its test, and it looked right in the diff. Only
+    clicking it in a running app showed nothing moving. Fix: cancellations and
+    returns now mutate the order (`CANCELLED` / `RETURNED`), reverse any
+    allocated stock and release the credit, each with its own audit event, and
+    every action returns a result string the UI shows ("Cancelled SO-24055 · 30
+    units back to stock · $1,120 credit released"). The lesson is in the task
+    breakdown: a passing test on the write path is not evidence the path does
+    anything.
+15. **Reset left a half-seeded database on the deployed build.** Seeding inserted
+    row by row through the pooler and blew the serverless window, so a reset
+    could finish with 15 emails instead of 40. It never reproduced locally,
+    where the same loop is fast. Fix: one bulk `.insert().values([...])` per
+    table with `onConflictDoNothing()`, which also made reset feel instant.
+16. **Urgency flagged out-of-office replies.** An "I'm away until Monday" reply
+    scored as same-day/urgent because it mentioned a date. Fix: skip `IGNORE`
+    dispositions and a subject-level guard, taking the flagged set from 4 to 3 —
+    and the row badges were removed entirely, since the "Urgent" filter does the
+    job without shouting.
+
+Two of the three were only visible in the deployed app, which is the honest
+argument for demoing from an empty state every time rather than trusting the
+seeded screenshot.
