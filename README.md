@@ -14,9 +14,11 @@ Sign in with `ops@harborpoint.demo` / `HarborPoint2026!`. The deploy seeds the
 ERP snapshot and the 40 raw emails only, so the inbox opens **unprocessed** — the
 before state.
 
-Press **Run agent** at the top of the inbox. It calls `openai/gpt-4o-mini` over
-OpenRouter in batches of five, shows progress as it goes (`15/40`, tokens, USD),
-and writes the verdicts, drafts and cost to Postgres. **Reset** wipes drafts,
+Press **Run agent** at the top of the inbox. It drives the tools through
+`glm-5.3-flash` on OpenCode Go in batches of five, shows progress as it goes
+(`15/40`, tokens, cost), and writes the verdicts, drafts and cost to Postgres.
+The dollar figure is the provider's list price: this demo runs on a flat-rate
+plan, so no per-request charge is incurred. **Reset** wipes drafts,
 releases and the audit trail and re-seeds the raw inbox.
 
 Open **E012** to see a prompt-injection attempt forced to human review, and

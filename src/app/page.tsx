@@ -41,7 +41,10 @@ export default async function InboxPage() {
         </div>
       </div>
 
-      <RunPanel status={status} enabled={Boolean(process.env.OPENROUTER_API_KEY)} />
+      <RunPanel
+        status={status}
+        enabled={Boolean(process.env.OPENCODE_GO_API_KEY ?? process.env.OPENROUTER_API_KEY)}
+      />
 
       <div className="mb-4 grid gap-4 md:grid-cols-[2fr_1fr]">
         <DispositionLegend rows={rows} />

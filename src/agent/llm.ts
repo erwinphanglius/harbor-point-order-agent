@@ -17,8 +17,44 @@ import { detectDuplicate, extractCustomerPo } from "../core/duplicate.js";
 import { processEmail } from "../core/pipeline.js";
 import { TOOL_DEFINITIONS, createToolContext, getTool, type ToolContext } from "../tools/index.js";
 
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const OPENCODE_GO_URL = "https://opencode.ai/inference/go/openai/v1/chat/completions";
 const MAX_STEPS = 8;
+
+type Provider = {
+  label: string;
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+};
+
+/**
+ * OpenCode Go (a flat-rate subscription) when its key is configured, otherwise
+ * OpenRouter pay-as-you-go. Both speak chat completions with tool calls, so the
+ * agent loop does not care which one answers.
+ */
+function resolveProvider(): Provider {
+  if (process.env.OPENCODE_GO_API_KEY) {
+    return {
+      label: "OpenCode Go",
+      url: OPENCODE_GO_URL,
+      headers: {
+        "User-Agent": "harbor-point-order-agent/1.0",
+        "x-opencode-session": "ses_harbor_point_demo",
+      },
+      body: {},
+    };
+  }
+  return {
+    label: "OpenRouter",
+    url: OPENROUTER_URL,
+    headers: {
+      "HTTP-Referer": "https://harbor-point-order-agent-mu.vercel.app",
+      "X-Title": "Harbor Point order intake",
+    },
+    body: { usage: { include: true } },
+  };
+}
 
 export interface LlmUsage {
   tokensIn: number;
@@ -32,9 +68,11 @@ export const ZERO_USAGE: LlmUsage = { tokensIn: 0, tokensOut: 0, costUsd: 0 };
 const MODEL_PRICES: Record<string, { in: number; out: number }> = {
   "openai/gpt-4o-mini": { in: 0.15, out: 0.6 },
   "google/gemini-2.5-flash-lite": { in: 0.1, out: 0.4 },
+  "glm-5.3-flash": { in: 0.2, out: 0.8 },
 };
 
-export const DEFAULT_MODEL = process.env.AGENT_MODEL ?? "openai/gpt-4o-mini";
+export const DEFAULT_MODEL =
+  process.env.AGENT_MODEL ?? (process.env.OPENCODE_GO_API_KEY ? "glm-5.3-flash" : "openai/gpt-4o-mini");
 
 interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -66,7 +104,7 @@ Reply with JSON only, no prose:
  "issues":[{"code":"SHORT_CODE","message":"plain reason"}],
  "note":"one sentence a reviewer will read"}`;
 
-function toOpenRouterTools() {
+function toChatTools() {
   return TOOL_DEFINITIONS.map((t) => ({
     type: "function" as const,
     function: { name: t.name, description: t.description, parameters: t.parameters },
@@ -83,33 +121,40 @@ async function callModel(
   apiKey: string,
   model: string,
 ): Promise<CallResult> {
-  const res = await fetch(API_URL, {
+  const provider = resolveProvider();
+  const res = await fetch(provider.url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://harbor-point-order-agent-mu.vercel.app",
-      "X-Title": "Harbor Point order intake",
+      ...provider.headers,
     },
     body: JSON.stringify({
       model,
       messages,
-      tools: toOpenRouterTools(),
+      tools: toChatTools(),
       tool_choice: "auto",
       temperature: 0,
-      usage: { include: true },
+      ...provider.body,
     }),
   });
-  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`${provider.label} ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as {
     choices: { message: ChatMessage }[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      cost?: number;
+      opencode?: { list_cost?: number };
+    };
   };
   const tokensIn = data.usage?.prompt_tokens ?? 0;
   const tokensOut = data.usage?.completion_tokens ?? 0;
   const price = MODEL_PRICES[model];
   const costUsd =
-    data.usage?.cost ?? (price ? (tokensIn / 1e6) * price.in + (tokensOut / 1e6) * price.out : 0);
+    data.usage?.opencode?.list_cost ??
+    data.usage?.cost ??
+    (price ? (tokensIn / 1e6) * price.in + (tokensOut / 1e6) * price.out : 0);
   return {
     message: data.choices?.[0]?.message ?? { role: "assistant", content: null },
     usage: { tokensIn, tokensOut, costUsd },

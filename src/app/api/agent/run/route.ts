@@ -8,11 +8,14 @@ export const maxDuration = 60;
 const ORDER_DATE = "2026-11-02";
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.OPENCODE_GO_API_KEY ?? process.env.OPENROUTER_API_KEY;
   const repo = getRepository();
 
   if (!apiKey) {
-    return NextResponse.json({ error: "OPENROUTER_API_KEY is not configured" }, { status: 400 });
+    return NextResponse.json(
+      { error: "No model key is configured (OPENCODE_GO_API_KEY or OPENROUTER_API_KEY)" },
+      { status: 400 },
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as { limit?: number };
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
   const snapshot = await repo.getSnapshot();
   const out = await runLlmBatch(emails, snapshot, ORDER_DATE, new Map(), {
     apiKey,
-    concurrency: 5,
+    concurrency: 8,
   });
   await repo.saveAgentResults(out.results, out.usage, DEFAULT_MODEL);
 

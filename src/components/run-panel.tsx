@@ -150,7 +150,9 @@ export function RunPanel({ status: initial, enabled }: Props) {
 
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
       {!enabled ? (
-        <p className="mt-2 text-xs text-amber-700">OPENROUTER_API_KEY is not set on this deployment, so the agent cannot run.</p>
+        <p className="mt-2 text-xs text-amber-700">
+          No model key is set on this deployment (OPENCODE_GO_API_KEY or OPENROUTER_API_KEY), so the agent cannot run.
+        </p>
       ) : null}
     </section>
   );
