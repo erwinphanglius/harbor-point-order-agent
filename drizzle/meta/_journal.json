@@ -15,6 +15,13 @@
       "when": 1793275193111,
       "tag": "0001_overconfident_peter_quill",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793697619285,
+      "tag": "0002_jazzy_the_professor",
+      "breakpoints": true
     }
   ]
 }

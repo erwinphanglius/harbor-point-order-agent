@@ -5,6 +5,15 @@ export function fmtMoney(n: number | null | undefined): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** Wall-clock time as stored, e.g. "2026-11-02T07:14:00-05:00" -> "07:14". */
+export function clock(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = iso.match(/T(\d{2}:\d{2})/);
+  if (m) return m[1];
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(11, 16);
+}
+
 export function dispositionLabel(d: Disposition): string {
   switch (d) {
     case "AUTO_DRAFT":

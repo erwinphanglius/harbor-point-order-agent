@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as s from "../db/schema.js";
 import { runOffline } from "../agent/offline.js";
@@ -6,6 +6,7 @@ import { loadSnapshot, loadEmails } from "../data/load.js";
 import { validateRelease, validateChangeApproval } from "../core/release.js";
 import { detectInjection } from "../core/injection.js";
 import { resolveUnitPrice } from "../core/pricing.js";
+import { seedDatabase } from "../seed/seed.js";
 import type {
   Classification,
   ChangeProposal,
@@ -19,6 +20,8 @@ import type {
 import type {
   Actor,
   ActionResult,
+  AgentRunUsage,
+  AgentStatus,
   AuditRecord,
   DraftState,
   InboxItem,
@@ -84,6 +87,91 @@ export class PgRepository implements Repository {
     return results;
   }
 
+  async listUnprocessed(limit: number): Promise<Email[]> {
+    const rows = await this.db
+      .select()
+      .from(s.emails)
+      .where(isNull(s.emails.processedAt))
+      .orderBy(asc(s.emails.receivedAt))
+      .limit(limit);
+    return rows.map((e) => ({
+      emailId: e.emailId,
+      receivedAt: e.receivedAt,
+      fromName: e.fromName ?? "",
+      fromEmail: e.fromEmail,
+      to: e.to ?? "",
+      subject: e.subject ?? "",
+      body: e.body,
+      attachments: safeJson<unknown[]>(e.attachments, []),
+    }));
+  }
+
+  async saveAgentResults(results: ProcessingResult[], usage: AgentRunUsage, model: string): Promise<void> {
+    const emails = await this.db.select().from(s.emails);
+    const emailRows: Email[] = emails.map((e) => ({
+      emailId: e.emailId,
+      receivedAt: e.receivedAt,
+      fromName: e.fromName ?? "",
+      fromEmail: e.fromEmail,
+      to: e.to ?? "",
+      subject: e.subject ?? "",
+      body: e.body,
+      attachments: safeJson<unknown[]>(e.attachments, []),
+    }));
+    await this.persistResults(results, emailRows, await this.loadSnapshot());
+    await this.db.insert(s.agentRuns).values({
+      model,
+      finishedAt: new Date(),
+      emailsProcessed: results.length,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      costUsd: usage.costUsd.toFixed(6),
+      status: "done",
+    });
+  }
+
+  async getAgentStatus(): Promise<AgentStatus> {
+    const [counts, runs, totals] = await Promise.all([
+      this.db
+        .select({
+          total: sql<number>`count(*)::int`,
+          processed: sql<number>`count(${s.emails.processedAt})::int`,
+        })
+        .from(s.emails),
+      this.db.select({ n: sql<number>`count(*)::int`, last: sql<string | null>`max(${s.agentRuns.finishedAt})` }).from(s.agentRuns),
+      this.db
+        .select({
+          tokensIn: sql<number>`coalesce(sum(${s.agentRuns.tokensIn}), 0)::int`,
+          tokensOut: sql<number>`coalesce(sum(${s.agentRuns.tokensOut}), 0)::int`,
+          costUsd: sql<string>`coalesce(sum(${s.agentRuns.costUsd}), 0)`,
+          model: sql<string | null>`max(${s.agentRuns.model})`,
+        })
+        .from(s.agentRuns),
+    ]);
+    const total = counts[0]?.total ?? 0;
+    const processed = counts[0]?.processed ?? 0;
+    return {
+      model: totals[0]?.model ?? process.env.AGENT_MODEL ?? "openai/gpt-4o-mini",
+      total,
+      processed,
+      remaining: total - processed,
+      tokensIn: totals[0]?.tokensIn ?? 0,
+      tokensOut: totals[0]?.tokensOut ?? 0,
+      costUsd: toNum(totals[0]?.costUsd),
+      runs: runs[0]?.n ?? 0,
+      lastRunAt: runs[0]?.last ?? null,
+    };
+  }
+
+  async resetDemo(): Promise<void> {
+    await this.db.execute(
+      sql`TRUNCATE TABLE audit_log, review_items, sales_order_lines, sales_orders, emails, agent_runs,
+          incoming_supply, inventory, customer_prices, products, ship_to_addresses, customer_contacts,
+          customers RESTART IDENTITY CASCADE`,
+    );
+    await seedDatabase(this.db as unknown as Parameters<typeof seedDatabase>[0]);
+  }
+
   private async persistResults(results: ProcessingResult[], emails: Email[], snapshot: ErpSnapshot): Promise<void> {
     const byEmail = new Map(emails.map((e) => [e.emailId, e]));
     let nextSo = maxOrderNumber(snapshot) + 1;
@@ -110,6 +198,7 @@ export class PgRepository implements Repository {
           notesJson: JSON.stringify(result.notes),
           changeProposalJson: result.changeProposal ? JSON.stringify(result.changeProposal) : null,
           duplicateOfEmailId: result.duplicateOfEmailId,
+          processedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: s.emails.emailId,
@@ -121,6 +210,7 @@ export class PgRepository implements Repository {
             notesJson: JSON.stringify(result.notes),
             changeProposalJson: result.changeProposal ? JSON.stringify(result.changeProposal) : null,
             duplicateOfEmailId: result.duplicateOfEmailId,
+            processedAt: new Date(),
           },
         });
 
@@ -392,12 +482,45 @@ export class PgRepository implements Repository {
       amount,
       emailState: e.reviewStatus === "no_action" ? "no_action" : "pending",
       emailRejectReason: e.rejectReason ?? null,
+      processed: e.processedAt != null,
     };
   }
 
   async getEmail(emailId: string): Promise<InboxItem | null> {
-    const items = await this.listInbox();
-    return items.find((i) => i.email.emailId === emailId) ?? null;
+    const [snapshot, emailRows, orderRows, auditRows] = await Promise.all([
+      this.loadSnapshot(),
+      this.db.select().from(s.emails).where(eq(s.emails.emailId, emailId)).limit(1),
+      this.db.select().from(s.salesOrders).where(eq(s.salesOrders.sourceEmailId, emailId)),
+      this.db.select().from(s.auditLog).where(eq(s.auditLog.emailId, emailId)),
+    ]);
+    const email = emailRows[0];
+    if (!email) return null;
+
+    const soNumbers = orderRows.map((o) => o.soNumber);
+    const lineRows = soNumbers.length
+      ? await this.db.select().from(s.salesOrderLines).where(inArray(s.salesOrderLines.soNumber, soNumbers))
+      : [];
+
+    const linesByOrder = new Map<string, (typeof s.salesOrderLines.$inferSelect)[]>();
+    for (const l of lineRows) {
+      const list = linesByOrder.get(l.soNumber) ?? [];
+      list.push(l);
+      linesByOrder.set(l.soNumber, list);
+    }
+    const auditByEmail = new Map<string, AuditRecord[]>();
+    auditByEmail.set(
+      emailId,
+      auditRows.map((a) => ({
+        id: a.id,
+        timestamp: iso(a.createdAt) ?? "",
+        emailId: a.emailId,
+        actor: a.actor as Actor,
+        action: a.action,
+        detail: a.detail,
+      })),
+    );
+
+    return this.buildItem(email, snapshot, orderRows, linesByOrder, auditByEmail);
   }
 
   async listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]> {

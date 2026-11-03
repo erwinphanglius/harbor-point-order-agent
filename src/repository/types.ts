@@ -42,6 +42,25 @@ export interface InboxItem {
   amount: number | null;
   emailState: "pending" | "no_action";
   emailRejectReason: string | null;
+  processed: boolean;
+}
+
+export interface AgentRunUsage {
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+}
+
+export interface AgentStatus {
+  model: string;
+  total: number;
+  processed: number;
+  remaining: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  runs: number;
+  lastRunAt: string | null;
 }
 
 export interface ActionResult {
@@ -58,6 +77,13 @@ export interface ReleaseEdit {
 export interface Repository {
   /** Run the agent over the inbox and persist the result idempotently. */
   processInbox(): Promise<ProcessingResult[]>;
+  /** Emails the agent has not looked at yet, oldest first. */
+  listUnprocessed(limit: number): Promise<Email[]>;
+  /** Persist one agent batch and record its token/cost usage. */
+  saveAgentResults(results: ProcessingResult[], usage: AgentRunUsage, model: string): Promise<void>;
+  getAgentStatus(): Promise<AgentStatus>;
+  /** Wipe every derived row and re-seed the raw inbox (demo reset). */
+  resetDemo(): Promise<void>;
   listInbox(): Promise<InboxItem[]>;
   getEmail(emailId: string): Promise<InboxItem | null>;
   listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]>;

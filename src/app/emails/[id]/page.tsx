@@ -23,6 +23,15 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
           ← Inbox
         </Link>
       </div>
+      {!item.processed ? (
+        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          The agent has not read this email yet. Press <strong>Run agent</strong> on the{" "}
+          <Link href="/" className="underline">
+            inbox
+          </Link>{" "}
+          to get a verdict.
+        </div>
+      ) : null}
       <EmailDetailClient
         email={{
           emailId: item.email.emailId,
@@ -41,6 +50,7 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
         changeProposal={item.result.changeProposal}
         drafts={item.drafts}
         emailState={item.emailState}
+        processed={item.processed}
         emailRejectReason={item.emailRejectReason}
         shipTos={shipTos}
         trace={trace}
