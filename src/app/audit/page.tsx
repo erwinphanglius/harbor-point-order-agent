@@ -11,10 +11,14 @@ const ACTOR_CLASS: Record<Actor, string> = {
   human: "bg-emerald-100 text-emerald-800",
 };
 
+function soOf(row: AuditRecord): string | null {
+  return row.detail.match(/SO-\d+/)?.[0] ?? null;
+}
+
 function groupByEmail(rows: AuditRecord[]): { key: string; emailId: string | null; rows: AuditRecord[] }[] {
   const groups = new Map<string, AuditRecord[]>();
   for (const row of rows) {
-    const key = row.emailId ?? "system";
+    const key = soOf(row) ?? row.emailId ?? "system";
     const bucket = groups.get(key);
     if (bucket) bucket.push(row);
     else groups.set(key, [row]);
@@ -42,12 +46,13 @@ export default async function AuditPage({
   ]);
 
   const groups = groupByEmail(audit);
+  const isSo = (key: string) => key.startsWith("SO-");
 
   return (
     <div>
       <h1 className="text-xl font-semibold">Audit trail</h1>
       <p className="mb-4 text-sm text-gray-500">
-        Append-only, newest first, grouped by email — {audit.length} events in the latest 300.
+        Append-only, newest first, grouped by order (SO) where the events mention one, otherwise by email — {audit.length} events in the latest 300.
       </p>
 
       <form className="mb-4 flex flex-wrap items-center gap-2" method="GET">
@@ -82,9 +87,15 @@ export default async function AuditPage({
             <details key={g.key} open={idx < 2} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
               <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-2.5 text-sm">
                 <span className="font-mono text-xs font-medium">{g.emailId ?? "system"}</span>
+                {isSo(g.key) && <span className="text-[10px] uppercase text-gray-400">order</span>}
                 <span className="text-xs text-gray-500">
                   {g.rows.length} event{g.rows.length > 1 ? "s" : ""}
                 </span>
+                {[...new Set(g.rows.map((r) => r.emailId).filter(Boolean))].map((id) => (
+                  <Link key={id} href={`/emails/${id}`} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 hover:underline">
+                    {id}
+                  </Link>
+                ))}
                 <span className="text-xs text-gray-400">latest {clock(g.rows[0].timestamp)}</span>
                 <span className="ml-auto flex gap-1">
                   {actors.map((a) => (

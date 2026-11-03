@@ -43,6 +43,8 @@ export interface InboxItem {
   emailState: "pending" | "no_action";
   emailRejectReason: string | null;
   processed: boolean;
+  /** pending | released | rejected | approved | no_action */
+  reviewStatus: string;
 }
 
 export interface AgentRunUsage {
@@ -66,6 +68,7 @@ export interface AgentStatus {
 export interface DashboardInventory {
   sku: string;
   name: string;
+  listPrice: number;
   onHand: number;
   allocated: number;
   available: number;

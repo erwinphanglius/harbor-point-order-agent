@@ -487,6 +487,7 @@ export class PgRepository implements Repository {
       emailState: e.reviewStatus === "no_action" ? "no_action" : "pending",
       emailRejectReason: e.rejectReason ?? null,
       processed: e.processedAt != null,
+      reviewStatus: e.reviewStatus,
     };
   }
 
@@ -577,6 +578,7 @@ export class PgRepository implements Repository {
       .map((i) => ({
         sku: i.sku,
         name: productBySku.get(i.sku)?.name ?? i.sku,
+        listPrice: toNum(productBySku.get(i.sku)?.listPrice),
         onHand: toNum(i.onHand),
         allocated: toNum(i.allocated),
         available: toNum(i.available),
@@ -660,6 +662,7 @@ export class PgRepository implements Repository {
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx.update(s.salesOrders).set({ draft: false, releasedAt: new Date() }).where(eq(s.salesOrders.soNumber, order.soNumber));
+      await tx.update(s.emails).set({ reviewStatus: "released" }).where(eq(s.emails.emailId, emailId));
 
       for (const line of lines) {
         const inv = snapshot.inventory.find((i) => i.sku === line.sku);
@@ -829,8 +832,65 @@ export class PgRepository implements Repository {
     const v = validateChangeApproval(proposal.soNumber, snapshot);
     if (!v.ok) return { ok: false, reasons: [v.reason ?? "Change cannot be applied"] };
 
-    await this.db.update(s.emails).set({ reviewStatus: "no_action" }).where(eq(s.emails.emailId, emailId));
-    await this.insertAudit(emailId, "human", "approved_change", `Approved change to ${proposal.soNumber}: ${proposal.description}`);
-    return { ok: true, reasons: [] };
+    const order = snapshot.orders.find((o) => o.soNumber === proposal.soNumber)!;
+    const lines = snapshot.orderLines.filter((l) => l.soNumber === order.soNumber);
+    const units = lines.reduce((n, l) => n + l.qtyOrdered, 0);
+    const value = round2(lines.reduce((n, l) => n + l.qtyOrdered * l.unitPrice, 0));
+
+    if (proposal.kind === "cancel" || proposal.kind === "return") {
+      const status = proposal.kind === "cancel" ? "CANCELLED" : "RETURNED";
+      await this.db.transaction(async (tx) => {
+        await tx.update(s.salesOrders).set({ status }).where(eq(s.salesOrders.soNumber, order.soNumber));
+        if (order.releasedAt) {
+          for (const line of lines) {
+            const inv = snapshot.inventory.find((i) => i.sku === line.sku);
+            if (!inv) continue;
+            await tx
+              .update(s.inventory)
+              .set({ allocated: num(inv.allocated - line.qtyOrdered), available: num(inv.available + line.qtyOrdered) })
+              .where(eq(s.inventory.sku, line.sku));
+            await tx.insert(s.auditLog).values({
+              emailId,
+              actor: "system",
+              action: "returned_stock",
+              detail: `Returned ${line.qtyOrdered} of ${line.sku} from ${order.soNumber} to stock`,
+            });
+          }
+          const customer = snapshot.customers.find((c) => c.customerId === order.customerId);
+          if (customer) {
+            await tx
+              .update(s.customers)
+              .set({ openBalance: num(customer.openBalance - value) })
+              .where(eq(s.customers.customerId, customer.customerId));
+            await tx.insert(s.auditLog).values({
+              emailId,
+              actor: "system",
+              action: "released_credit",
+              detail: `Released $${value} credit for ${customer.customerId} (balance now $${num(customer.openBalance - value)})`,
+            });
+          }
+        }
+        await tx.update(s.emails).set({ reviewStatus: "approved" }).where(eq(s.emails.emailId, emailId));
+        await tx.insert(s.auditLog).values({
+          emailId,
+          actor: "human",
+          action: "approved_change",
+          detail: `${status} ${order.soNumber} on the customer's request: ${proposal.description}`,
+        });
+      });
+      return {
+        ok: true,
+        reasons: [],
+        detail: `${proposal.kind === "cancel" ? "Cancelled" : "Returned"} ${order.soNumber} · ${units} units back to stock · $${value} credit released`,
+      };
+    }
+
+    await this.db.update(s.emails).set({ reviewStatus: "approved" }).where(eq(s.emails.emailId, emailId));
+    await this.insertAudit(emailId, "human", "approved_change", `Approved change to ${order.soNumber}: ${proposal.description}`);
+    return {
+      ok: true,
+      reasons: [],
+      detail: `Approved change to ${order.soNumber} — the revised quantities still have to be keyed in`,
+    };
   }
 }

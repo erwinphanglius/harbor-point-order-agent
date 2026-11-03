@@ -49,6 +49,7 @@ export default async function DashboardPage() {
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
                 <th className="px-3 py-2">SKU</th>
                 <th className="px-3 py-2">Product</th>
+                <th className="px-3 py-2 text-right">List</th>
                 <th className="px-3 py-2 text-right">On hand</th>
                 <th className="px-3 py-2 text-right">Allocated</th>
                 <th className="px-3 py-2 text-right">Available</th>
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
                       <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{i.status}</span>
                     )}
                   </td>
+                  <td className="px-3 py-1.5 text-right text-gray-500">{fmtMoney(i.listPrice)}</td>
                   <td className="px-3 py-1.5 text-right text-gray-600">{i.onHand}</td>
                   <td className="px-3 py-1.5 text-right text-gray-600">{i.allocated}</td>
                   <td className={`px-3 py-1.5 text-right font-medium ${i.available <= 0 ? "text-red-600" : i.available < 10 ? "text-amber-600" : "text-gray-900"}`}>

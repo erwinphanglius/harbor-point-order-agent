@@ -11,6 +11,15 @@ import { DispositionBadge } from "./badge";
 import { DraftEditor } from "./draft-editor";
 import { Spinner } from "./ui";
 
+const STATUS_STYLE: Record<string, string> = {
+  released: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-red-100 text-red-800",
+  approved: "bg-blue-100 text-blue-800",
+  no_action: "bg-gray-100 text-gray-600",
+};
+import { SuggestedReply } from "./suggested-reply";
+import { suggestedReply } from "@/lib/reply";
+
 /** One plain sentence: what this email is, and what approving it would do. */
 function decisionSummary(args: {
   processed: boolean;
@@ -68,11 +77,26 @@ export function EmailDetailClient(props: {
   emailRejectReason: string | null;
   shipTos: ShipToOption[];
   trace: TraceStep[];
+  duplicateOf: string | null;
+  reviewStatus: string;
 }) {
-  const { email, classification, disposition, injection, issues, notes, changeProposal, drafts, emailState, emailRejectReason, shipTos, trace, processed } =
+  const { email, classification, disposition, injection, issues, notes, changeProposal, drafts, emailState, emailRejectReason, shipTos, trace, processed, duplicateOf, reviewStatus } =
     props;
+  const soNumbers = [...drafts.map((d) => d.soNumber), ...(changeProposal ? [changeProposal.soNumber] : [])];
+  const reply = processed
+    ? suggestedReply({
+        disposition,
+        fromName: email.fromName,
+        customerName: null,
+        issues,
+        drafts: drafts.map((d) => ({ soNumber: d.soNumber, orderTotal: d.orderTotal })),
+        changeProposal: changeProposal ? { soNumber: changeProposal.soNumber, kind: changeProposal.kind, description: changeProposal.description } : null,
+        duplicateOf,
+      })
+    : null;
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [ok, setOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -83,6 +107,7 @@ export function EmailDetailClient(props: {
     setBusy(label);
     startTransition(async () => {
       const res = await fn();
+      setOk(res.ok);
       setMessage(res.ok ? res.detail ?? `${label} done.` : `Refused: ${res.reasons.join("; ")}`);
       setBusy(null);
     });
@@ -118,6 +143,25 @@ export function EmailDetailClient(props: {
           </div>
           <span className="text-xs text-gray-400">{clock(email.receivedAt)}</span>
         </div>
+        {(soNumbers.length > 0 || duplicateOf) && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+            {soNumbers.map((so) => (
+              <span key={so} className="rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-700">
+                {so}
+              </span>
+            ))}
+            {soNumbers[0] && (
+              <Link href="/dashboard" className="text-blue-700 hover:underline">
+                view on dashboard →
+              </Link>
+            )}
+            {duplicateOf && (
+              <Link href={`/emails/${duplicateOf}`} className="rounded bg-violet-100 px-2 py-0.5 text-violet-800 hover:underline">
+                duplicate of {duplicateOf} →
+              </Link>
+            )}
+          </div>
+        )}
         <h1 className="text-lg font-semibold">{email.subject}</h1>
         <p className="mt-1 text-sm text-gray-500">
           From {email.fromName} &lt;{email.fromEmail}&gt; to {email.to}
@@ -181,6 +225,8 @@ export function EmailDetailClient(props: {
         </div>
       )}
 
+      {reply && <SuggestedReply text={reply} />}
+
       <div className="rounded border border-gray-200 bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold uppercase text-gray-500">Raw email</h2>
         <pre className="whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs text-gray-700">{email.body}</pre>
@@ -206,7 +252,30 @@ export function EmailDetailClient(props: {
 
       <div className="rounded border border-gray-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold uppercase text-gray-500">Human decision</h2>
+        {reviewStatus !== "pending" && (
+          <p className={`mb-2 inline-block rounded px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLE[reviewStatus] ?? "bg-gray-100 text-gray-600"}`}>
+            {reviewStatus.replace("_", " ")}
+            {reviewStatus === "released" && drafts[0] ? ` · ${drafts[0].soNumber} · ${fmtMoney(drafts[0].orderTotal)} credit used` : ""}
+          </p>
+        )}
         <p className="mb-3 text-sm text-gray-700">{summary}</p>
+        <div className="mb-3">
+          {message && (
+            <div
+              role="status"
+              className={`rounded border px-3 py-2 text-sm ${
+                ok === false ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"
+              }`}
+            >
+              <span className="font-medium">{ok === false ? "Nothing changed." : "Done."}</span> {message}
+              {/released|allocated|stock|credit/i.test(message) && (
+                <Link href="/dashboard" className="ml-2 font-medium underline">
+                  See stock and credit →
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
         {notes.length > 0 && <p className="mb-2 text-xs text-gray-500">{notes.join(" · ")}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -232,16 +301,6 @@ export function EmailDetailClient(props: {
             Mark as no-action
           </button>
         </div>
-        {message && (
-          <div className="mt-3 rounded bg-gray-50 px-3 py-2 text-sm">
-            {message}
-            {/released|allocated/i.test(message) && (
-              <Link href="/dashboard" className="ml-2 font-medium text-blue-700 hover:underline">
-                See stock and credit on the dashboard →
-              </Link>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
