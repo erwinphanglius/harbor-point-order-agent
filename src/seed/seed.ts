@@ -24,77 +24,98 @@ export async function seedDatabase(db: Db): Promise<void> {
   const snap = loadSnapshot();
   const emails = loadEmails();
 
-  for (const c of snap.customers) {
-    await db
-      .insert(s.customers)
-      .values({
+  // One statement per table: a row-at-a-time seed costs a round trip per row,
+  // which times out against a hosted database (the demo reset runs it live).
+  await db
+    .insert(s.customers)
+    .values(
+      snap.customers.map((c) => ({
         customerId: c.customerId,
         name: c.name,
         paymentTerms: c.paymentTerms,
         creditLimit: num(c.creditLimit),
         openBalance: num(c.openBalance),
         status: c.status,
-      })
-      .onConflictDoUpdate({ target: s.customers.customerId, set: { name: c.name, status: c.status, creditLimit: num(c.creditLimit), openBalance: num(c.openBalance) } });
-  }
+      })),
+    )
+    .onConflictDoNothing();
 
-  for (const c of snap.contacts) {
-    await db
-      .insert(s.customerContacts)
-      .values({ customerId: c.customerId, name: c.name, email: c.email, role: c.role })
-      .onConflictDoUpdate({ target: s.customerContacts.email, set: { customerId: c.customerId, name: c.name, role: c.role } });
-  }
+  await db
+    .insert(s.customerContacts)
+    .values(snap.contacts.map((c) => ({ customerId: c.customerId, name: c.name, email: c.email, role: c.role })))
+    .onConflictDoNothing();
 
-  for (const a of snap.shipTos) {
-    await db
-      .insert(s.shipToAddresses)
-      .values({ shipToId: a.shipToId, customerId: a.customerId, name: a.name, address: a.address, isDefault: a.isDefault })
-      .onConflictDoUpdate({ target: s.shipToAddresses.shipToId, set: { customerId: a.customerId, name: a.name, address: a.address, isDefault: a.isDefault } });
-  }
+  await db
+    .insert(s.shipToAddresses)
+    .values(snap.shipTos.map((a) => ({ shipToId: a.shipToId, customerId: a.customerId, name: a.name, address: a.address, isDefault: a.isDefault })))
+    .onConflictDoNothing();
 
-  for (const p of snap.products) {
-    await db
-      .insert(s.products)
-      .values({ sku: p.sku, name: p.name, category: p.category, sellUom: p.sellUom, pack: p.pack, listPrice: num(p.listPrice), status: p.status, replacedBy: p.replacedBy })
-      .onConflictDoUpdate({ target: s.products.sku, set: { name: p.name, category: p.category, sellUom: p.sellUom, pack: p.pack, listPrice: num(p.listPrice), status: p.status, replacedBy: p.replacedBy } });
-  }
+  await db
+    .insert(s.products)
+    .values(
+      snap.products.map((p) => ({
+        sku: p.sku,
+        name: p.name,
+        category: p.category,
+        sellUom: p.sellUom,
+        pack: p.pack,
+        listPrice: num(p.listPrice),
+        status: p.status,
+        replacedBy: p.replacedBy,
+      })),
+    )
+    .onConflictDoNothing();
 
-  for (const p of snap.prices) {
-    await db
-      .insert(s.customerPrices)
-      .values({ customerId: p.customerId, sku: p.sku, unitPrice: num(p.unitPrice), validFrom: p.validFrom, validTo: p.validTo })
-      .onConflictDoNothing();
-  }
+  await db
+    .insert(s.customerPrices)
+    .values(snap.prices.map((p) => ({ customerId: p.customerId, sku: p.sku, unitPrice: num(p.unitPrice), validFrom: p.validFrom, validTo: p.validTo })))
+    .onConflictDoNothing();
 
-  for (const i of snap.inventory) {
-    await db
-      .insert(s.inventory)
-      .values({ sku: i.sku, onHand: num(i.onHand), allocated: num(i.allocated), available: num(i.available) })
-      .onConflictDoUpdate({ target: s.inventory.sku, set: { onHand: num(i.onHand), allocated: num(i.allocated), available: num(i.available) } });
-  }
+  await db
+    .insert(s.inventory)
+    .values(snap.inventory.map((i) => ({ sku: i.sku, onHand: num(i.onHand), allocated: num(i.allocated), available: num(i.available) })))
+    .onConflictDoNothing();
 
-  for (const i of snap.incoming) {
-    await db.insert(s.incomingSupply).values({ supplierPo: i.supplierPo, sku: i.sku, qty: num(i.qty), expectedDate: i.expectedDate }).onConflictDoNothing();
-  }
+  await db
+    .insert(s.incomingSupply)
+    .values(snap.incoming.map((i) => ({ supplierPo: i.supplierPo, sku: i.sku, qty: num(i.qty), expectedDate: i.expectedDate })))
+    .onConflictDoNothing();
 
-  for (const o of snap.orders) {
-    await db
-      .insert(s.salesOrders)
-      .values({ soNumber: o.soNumber, customerId: o.customerId, shipToId: o.shipToId, customerPo: o.customerPo, orderDate: o.orderDate, requestedDate: o.requestedDate, status: o.status, draft: false, createdByAgent: false })
-      .onConflictDoUpdate({ target: s.salesOrders.soNumber, set: { status: o.status, customerPo: o.customerPo } });
-  }
+  await db
+    .insert(s.salesOrders)
+    .values(
+      snap.orders.map((o) => ({
+        soNumber: o.soNumber,
+        customerId: o.customerId,
+        shipToId: o.shipToId,
+        customerPo: o.customerPo,
+        orderDate: o.orderDate,
+        requestedDate: o.requestedDate,
+        status: o.status,
+        draft: false,
+        createdByAgent: false,
+      })),
+    )
+    .onConflictDoNothing();
 
-  for (const l of snap.orderLines) {
-    await db
-      .insert(s.salesOrderLines)
-      .values({ soNumber: l.soNumber, lineNo: l.lineNo, sku: l.sku, qtyOrdered: num(l.qtyOrdered), qtyShipped: num(l.qtyShipped), unitPrice: num(l.unitPrice) })
-      .onConflictDoNothing();
-  }
+  await db
+    .insert(s.salesOrderLines)
+    .values(
+      snap.orderLines.map((l) => ({
+        soNumber: l.soNumber,
+        lineNo: l.lineNo,
+        sku: l.sku,
+        qtyOrdered: num(l.qtyOrdered),
+        qtyShipped: num(l.qtyShipped),
+        unitPrice: num(l.unitPrice),
+      })),
+    )
+    .onConflictDoNothing();
 
-  for (const e of emails) {
-    await db
-      .insert(s.emails)
-      .values({
+  await db
+    .insert(s.emails)
+    .values(
+      emails.map((e) => ({
         emailId: e.emailId,
         receivedAt: e.receivedAt,
         fromName: e.fromName,
@@ -104,9 +125,9 @@ export async function seedDatabase(db: Db): Promise<void> {
         body: e.body,
         attachments: JSON.stringify(e.attachments ?? []),
         reviewStatus: "pending",
-      })
-      .onConflictDoNothing();
-  }
+      })),
+    )
+    .onConflictDoNothing();
 }
 
 async function main(): Promise<void> {

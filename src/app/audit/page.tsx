@@ -21,20 +21,22 @@ export default async function AuditPage({
   const actorFilter = (sp.actor as Actor | undefined) || undefined;
 
   const repo = getRepository();
-  const items = await repo.listInbox();
-  const audit = await repo.listAudit({ emailId: emailFilter, actor: actorFilter });
+  const [items, audit] = await Promise.all([
+    repo.listEmailOptions(),
+    repo.listAudit({ emailId: emailFilter, actor: actorFilter }),
+  ]);
 
   return (
     <div>
       <h1 className="mb-4 text-xl font-semibold">Audit trail</h1>
-      <p className="mb-4 text-sm text-gray-500">Append-only, newest first.</p>
+      <p className="mb-4 text-sm text-gray-500">Append-only, newest first. Showing the latest 300 events.</p>
 
       <form className="mb-4 flex flex-wrap items-center gap-2" method="GET">
         <select name="email" defaultValue={emailFilter ?? ""} className="rounded border border-gray-300 px-2 py-1 text-sm">
           <option value="">All emails</option>
           {items.map((i) => (
-            <option key={i.email.emailId} value={i.email.emailId}>
-              {i.email.emailId} — {i.email.subject}
+            <option key={i.emailId} value={i.emailId}>
+              {i.emailId} — {i.subject}
             </option>
           ))}
         </select>
