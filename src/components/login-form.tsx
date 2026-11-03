@@ -28,7 +28,13 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md rounded border border-gray-200 bg-white p-6">
+    <div className="relative rounded border border-gray-200 bg-white p-6">
+      {pending && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded bg-white/85">
+          <Spinner className="h-6 w-6 text-gray-900" />
+          <span className="text-sm text-gray-600">Signing in…</span>
+        </div>
+      )}
       <h1 className="mb-4 text-lg font-semibold">Sign in</h1>
       <form onSubmit={onSubmit} className="space-y-3">
         <div>

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { Disposition } from "@/core/types.js";
-import { bulkRelease } from "@/app/actions";
+import { bulkRelease, rejectOrder } from "@/app/actions";
 import { fmtMoney } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { Spinner } from "./ui";
@@ -23,7 +23,17 @@ export interface InboxRow {
   processed: boolean;
   urgency: "today" | "urgent" | null;
   why: string | null;
+  soNumbers: string[];
+  reviewStatus: string;
+  duplicateOf: string | null;
 }
+
+const STATUS_STYLE: Record<string, string> = {
+  released: "bg-emerald-100 text-emerald-800",
+  rejected: "bg-red-100 text-red-800",
+  approved: "bg-blue-100 text-blue-800",
+  no_action: "bg-gray-100 text-gray-600",
+};
 
 function senderLabel(r: InboxRow): string {
   if (r.customerName) return r.customerName;
@@ -69,6 +79,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
         r.fromName.toLowerCase().includes(q) ||
         r.fromEmail.toLowerCase().includes(q) ||
         r.emailId.toLowerCase().includes(q) ||
+        r.soNumbers.some((so) => so.toLowerCase().includes(q)) ||
         (r.customerName ?? "").toLowerCase().includes(q)
       );
     });
@@ -88,6 +99,15 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  }
+
+  function quickReject(r: InboxRow) {
+    const reason = window.prompt(`Reject ${r.emailId}${r.soNumbers[0] ? ` (${r.soNumbers[0]})` : ""} — reason for the audit trail:`);
+    if (!reason?.trim()) return;
+    startTransition(async () => {
+      const res = await rejectOrder(r.emailId, r.soNumbers[0] ?? null, reason.trim());
+      setMessage(res.ok ? res.detail ?? "Rejected." : `Rejected refused: ${res.reasons.join("; ")}`);
     });
   }
 
@@ -166,19 +186,25 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                   <div className="text-xs text-gray-400">{r.fromEmail}</div>
                 </td>
                 <td className="px-3 py-2 align-top">
-                  <div className="flex items-start gap-2">
-                    {r.urgency && (
-                      <span
-                        className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
-                          r.urgency === "today" ? "bg-red-600 text-white" : "bg-orange-100 text-orange-800"
-                        }`}
-                      >
-                        {r.urgency === "today" ? "Today" : "Urgent"}
+                  <Link href={`/emails/${r.emailId}`} className="hover:underline">
+                    {r.subject}
+                  </Link>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    {r.soNumbers.map((so) => (
+                      <span key={so} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-600">
+                        {so}
+                      </span>
+                    ))}
+                    {r.duplicateOf && (
+                      <Link href={`/emails/${r.duplicateOf}`} className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-800 hover:underline">
+                        duplicate of {r.duplicateOf}
+                      </Link>
+                    )}
+                    {r.reviewStatus !== "pending" && (
+                      <span className={`rounded px-1.5 py-0.5 font-medium capitalize ${STATUS_STYLE[r.reviewStatus] ?? "bg-gray-100 text-gray-600"}`}>
+                        {r.reviewStatus.replace("_", " ")}
                       </span>
                     )}
-                    <Link href={`/emails/${r.emailId}`} className="hover:underline">
-                      {r.subject}
-                    </Link>
                   </div>
                   {r.why && r.processed && (
                     <div className="mt-0.5 line-clamp-1 text-xs text-gray-500" title={r.why}>
@@ -194,7 +220,18 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Not processed</span>
                   )}
                 </td>
-                <td className="px-3 py-2 align-top text-right">{fmtMoney(r.amount)}</td>
+                <td className="px-3 py-2 align-top text-right">
+                  <div>{fmtMoney(r.amount)}</div>
+                  {r.processed && r.reviewStatus !== "released" && r.reviewStatus !== "rejected" && (
+                    <button
+                      onClick={() => quickReject(r)}
+                      disabled={isPending}
+                      className="mt-1 text-[11px] text-gray-400 underline hover:text-red-600 disabled:opacity-50"
+                    >
+                      reject
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (

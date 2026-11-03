@@ -54,6 +54,8 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
         emailRejectReason={item.emailRejectReason}
         shipTos={shipTos}
         trace={trace}
+        duplicateOf={item.result.duplicateOfEmailId ?? null}
+        reviewStatus={item.reviewStatus}
       />
     </div>
   );

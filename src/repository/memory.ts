@@ -82,6 +82,7 @@ export class MemoryRepository implements Repository {
         emailState: "pending",
         emailRejectReason: null,
         processed: true,
+        reviewStatus: "pending",
       });
     }
     return items;
@@ -228,7 +229,8 @@ export class MemoryRepository implements Repository {
     const v = this.validateDraftForRelease(draft);
     if (!v.ok) return { ok: false, reasons: v.reasons };
     this.applyRelease(item, draft, v.orderValue ?? draft.orderTotal);
-    return { ok: true, reasons: [] };
+    item.reviewStatus = "released";
+    return { ok: true, reasons: [], detail: `Released ${soNumber} · stock allocated and credit used` };
   }
 
   async releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult> {
@@ -282,6 +284,7 @@ export class MemoryRepository implements Repository {
       if (!draft) return { ok: false, reasons: ["Draft not found"] };
       draft.status = "REJECTED";
       draft.rejectReason = reason;
+      item.reviewStatus = "rejected";
       this.appendAudit(emailId, "human", "rejected", `Rejected ${soNumber}: ${reason}`);
     } else {
       item.emailState = "no_action";
@@ -295,8 +298,9 @@ export class MemoryRepository implements Repository {
     const item = this.byId.get(emailId);
     if (!item) return { ok: false, reasons: ["Email not found"] };
     item.emailState = "no_action";
+    item.reviewStatus = "no_action";
     this.appendAudit(emailId, "human", "no_action", `Marked ${emailId} as no action`);
-    return { ok: true, reasons: [] };
+    return { ok: true, reasons: [], detail: "Marked no action — nothing released" };
   }
 
   async bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]> {
@@ -333,9 +337,9 @@ export class MemoryRepository implements Repository {
     if (!proposal) return { ok: false, reasons: ["No change proposal"] };
     const v = validateChangeApproval(proposal.soNumber, this.snapshot);
     if (!v.ok) return { ok: false, reasons: [v.reason ?? "Change cannot be applied"] };
-    item.emailState = "no_action";
+    item.reviewStatus = "approved";
     this.appendAudit(emailId, "human", "approved_change", `Approved change to ${proposal.soNumber}: ${proposal.description}`);
-    return { ok: true, reasons: [] };
+    return { ok: true, reasons: [], detail: `Approved change to ${proposal.soNumber}` };
   }
 
   async getSnapshot(): Promise<ErpSnapshot> {
@@ -348,6 +352,7 @@ export class MemoryRepository implements Repository {
       .map((i) => ({
         sku: i.sku,
         name: nameBySku.get(i.sku)?.name ?? i.sku,
+        listPrice: nameBySku.get(i.sku)?.listPrice ?? 0,
         onHand: i.onHand,
         allocated: i.allocated,
         available: i.available,

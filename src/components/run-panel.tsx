@@ -185,7 +185,7 @@ export function RunPanel({ status: initial, enabled }: Props) {
             ? eta
               ? `About ${eta < 60 ? `${eta} seconds` : `${Math.ceil(eta / 60)} minute${Math.ceil(eta / 60) > 1 ? "s" : ""}`} left — don't refresh or close this tab.`
               : "Working — don't refresh or close this tab."
-            : `${status.total} emails, usually about 2 minutes in batches of ${BATCH}. You can leave this page mid-run; it picks up where it stopped when you come back.`}
+            : `${status.total} emails, usually about 2 minutes in batches of ${BATCH}.`}
         </p>
       </div>
 

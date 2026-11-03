@@ -4,6 +4,7 @@ import { RunPanel } from "@/components/run-panel";
 import { DispositionLegend } from "@/components/legend";
 import { SnapshotCard } from "@/components/snapshot-card";
 import { urgencyOf } from "@/lib/urgency";
+import { issueLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,13 @@ export default async function InboxPage() {
     canRelease: item.drafts.some((d) => d.status === "DRAFT"),
     processed: item.processed,
       urgency: item.result.disposition === "IGNORE" ? null : urgencyOf(item.email.subject, item.email.body),
-      why: why ? why.replace(/\s+/g, " ").slice(0, 110) : null,
+      why: why ? `${issueLabel(item.result.issues[0]?.code ?? "")}: ${why}`.replace(/\s+/g, " ").slice(0, 110) : null,
+      soNumbers: [
+        ...item.drafts.map((d) => d.soNumber),
+        ...(item.result.changeProposal ? [item.result.changeProposal.soNumber] : []),
+      ],
+      reviewStatus: item.reviewStatus,
+      duplicateOf: item.result.duplicateOfEmailId ?? null,
     };
   });
 
