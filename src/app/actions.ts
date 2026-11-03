@@ -9,10 +9,11 @@ import type { ReleaseEdit } from "@/repository/types.js";
 export interface ActionResponse {
   ok: boolean;
   reasons: string[];
+  detail?: string;
 }
 
-function fromResult(r: { ok: boolean; reasons: string[] }): ActionResponse {
-  return { ok: r.ok, reasons: r.reasons };
+function fromResult(r: { ok: boolean; reasons: string[]; detail?: string }): ActionResponse {
+  return { ok: r.ok, reasons: r.reasons, detail: r.detail };
 }
 
 function revalidateAll(emailId?: string): void {

@@ -63,9 +63,51 @@ export interface AgentStatus {
   lastRunAt: string | null;
 }
 
+export interface DashboardInventory {
+  sku: string;
+  name: string;
+  onHand: number;
+  allocated: number;
+  available: number;
+  status: string;
+}
+
+export interface DashboardCustomer {
+  customerId: string;
+  name: string;
+  creditLimit: number;
+  openBalance: number;
+  headroom: number;
+  status: string;
+}
+
+export interface DashboardOrder {
+  soNumber: string;
+  customerName: string;
+  status: string;
+  total: number;
+  releasedAt: string | null;
+}
+
+export interface Dashboard {
+  inventory: DashboardInventory[];
+  customers: DashboardCustomer[];
+  orders: DashboardOrder[];
+  totals: {
+    products: number;
+    lowStock: number;
+    creditLimit: number;
+    creditUsed: number;
+    openOrders: number;
+    released: number;
+  };
+}
+
 export interface ActionResult {
   ok: boolean;
   reasons: string[];
+  /** What the action actually changed, for the confirmation banner. */
+  detail?: string;
 }
 
 export interface ReleaseEdit {
@@ -97,4 +139,6 @@ export interface Repository {
   bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]>;
   approveChange(emailId: string): Promise<ActionResult>;
   getSnapshot(): Promise<ErpSnapshot>;
+  /** Read-only ERP view: stock, credit and orders after human decisions. */
+  getDashboard(): Promise<Dashboard>;
 }

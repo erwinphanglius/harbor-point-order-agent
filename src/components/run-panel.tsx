@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Spinner } from "./ui";
 
 export interface AgentStatusProps {
   model: string;
@@ -33,6 +34,7 @@ export function RunPanel({ status: initial, enabled }: Props) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [eta, setEta] = useState<number | null>(null);
   const stop = useRef(false);
   const resumed = useRef(false);
 
@@ -48,6 +50,18 @@ export function RunPanel({ status: initial, enabled }: Props) {
     void run();
   }, [enabled, running, resetting, status.processed, status.remaining]);
 
+  // A refresh mid-run is survivable now (the loop resumes), but the tab still
+  // loses the batch in flight, so warn before it happens.
+  useEffect(() => {
+    if (!running) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [running]);
+
   const pct = status.total === 0 ? 0 : Math.round((status.processed / status.total) * 100);
   const done = status.remaining === 0 && status.processed > 0;
 
@@ -55,7 +69,10 @@ export function RunPanel({ status: initial, enabled }: Props) {
     if (running) return;
     setRunning(true);
     setError(null);
+    setEta(null);
     stop.current = false;
+    const startedAt = Date.now();
+    const startProcessed = status.processed;
     try {
       let guard = 0;
       while (!stop.current && guard++ < 20) {
@@ -79,6 +96,11 @@ export function RunPanel({ status: initial, enabled }: Props) {
           costUsd: data.costUsd,
           runs: data.runs,
         });
+        const done = data.processed - startProcessed;
+        if (done > 0 && data.remaining > 0) {
+          const perEmail = (Date.now() - startedAt) / done;
+          setEta(Math.max(1, Math.round((perEmail * data.remaining) / 1000)));
+        }
         router.refresh();
         if ((data.batch ?? 0) === 0 || data.remaining === 0) break;
       }
@@ -127,8 +149,9 @@ export function RunPanel({ status: initial, enabled }: Props) {
             type="button"
             onClick={run}
             disabled={!enabled || running || status.remaining === 0}
-            className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="flex items-center gap-2 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
           >
+            {running && <Spinner className="h-3.5 w-3.5" />}
             {running ? `Processing… ${status.processed}/${status.total}` : status.remaining === 0 ? "All processed" : "Run agent"}
           </button>
           <button
@@ -157,6 +180,13 @@ export function RunPanel({ status: initial, enabled }: Props) {
             {status.runs > 0 ? ` · ${status.runs} batches` : ""}
           </span>
         </div>
+        <p className="mt-1 text-xs text-gray-400">
+          {running
+            ? eta
+              ? `About ${eta < 60 ? `${eta} seconds` : `${Math.ceil(eta / 60)} minute${Math.ceil(eta / 60) > 1 ? "s" : ""}`} left — don't refresh or close this tab.`
+              : "Working — don't refresh or close this tab."
+            : `${status.total} emails, usually about 2 minutes in batches of ${BATCH}. You can leave this page mid-run; it picks up where it stopped when you come back.`}
+        </p>
       </div>
 
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}

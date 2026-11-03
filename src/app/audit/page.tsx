@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getRepository } from "@/lib/repo";
 import { clock } from "@/lib/format";
-import type { Actor } from "@/repository/types.js";
+import type { Actor, AuditRecord } from "@/repository/types.js";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,21 @@ const ACTOR_CLASS: Record<Actor, string> = {
   system: "bg-gray-200 text-gray-700",
   human: "bg-emerald-100 text-emerald-800",
 };
+
+function groupByEmail(rows: AuditRecord[]): { key: string; emailId: string | null; rows: AuditRecord[] }[] {
+  const groups = new Map<string, AuditRecord[]>();
+  for (const row of rows) {
+    const key = row.emailId ?? "system";
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row);
+    else groups.set(key, [row]);
+  }
+  return [...groups.entries()].map(([key, list]) => ({
+    key,
+    emailId: key === "system" ? null : key,
+    rows: list,
+  }));
+}
 
 export default async function AuditPage({
   searchParams,
@@ -26,10 +41,14 @@ export default async function AuditPage({
     repo.listAudit({ emailId: emailFilter, actor: actorFilter }),
   ]);
 
+  const groups = groupByEmail(audit);
+
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold">Audit trail</h1>
-      <p className="mb-4 text-sm text-gray-500">Append-only, newest first. Showing the latest 300 events.</p>
+      <h1 className="text-xl font-semibold">Audit trail</h1>
+      <p className="mb-4 text-sm text-gray-500">
+        Append-only, newest first, grouped by email — {audit.length} events in the latest 300.
+      </p>
 
       <form className="mb-4 flex flex-wrap items-center gap-2" method="GET">
         <select name="email" defaultValue={emailFilter ?? ""} className="rounded border border-gray-300 px-2 py-1 text-sm">
@@ -56,46 +75,52 @@ export default async function AuditPage({
         )}
       </form>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
-              <th className="px-3 py-2">Time</th>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Actor</th>
-              <th className="px-3 py-2">Action</th>
-              <th className="px-3 py-2">Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {audit.map((a) => (
-              <tr key={a.id} className="border-b border-gray-100 last:border-0 align-top">
-                <td className="px-3 py-2 text-xs text-gray-500">{clock(a.timestamp)}</td>
-                <td className="px-3 py-2">
-                  {a.emailId ? (
-                    <Link href={`/emails/${a.emailId}`} className="text-blue-700 hover:underline">
-                      {a.emailId}
-                    </Link>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${ACTOR_CLASS[a.actor]}`}>{a.actor}</span>
-                </td>
-                <td className="px-3 py-2 font-mono text-xs">{a.action}</td>
-                <td className="px-3 py-2 text-gray-700">{a.detail}</td>
-              </tr>
-            ))}
-            {audit.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
-                  No audit entries.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="space-y-2">
+        {groups.map((g, idx) => {
+          const actors = [...new Set(g.rows.map((r) => r.actor))];
+          return (
+            <details key={g.key} open={idx < 2} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+              <summary className="flex cursor-pointer select-none items-center gap-3 px-4 py-2.5 text-sm">
+                <span className="font-mono text-xs font-medium">{g.emailId ?? "system"}</span>
+                <span className="text-xs text-gray-500">
+                  {g.rows.length} event{g.rows.length > 1 ? "s" : ""}
+                </span>
+                <span className="text-xs text-gray-400">latest {clock(g.rows[0].timestamp)}</span>
+                <span className="ml-auto flex gap-1">
+                  {actors.map((a) => (
+                    <span key={a} className={`rounded-full px-2 py-0.5 text-[10px] ${ACTOR_CLASS[a]}`}>
+                      {a}
+                    </span>
+                  ))}
+                </span>
+                {g.emailId && (
+                  <Link href={`/emails/${g.emailId}`} className="text-xs text-blue-700 hover:underline">
+                    open
+                  </Link>
+                )}
+              </summary>
+              <table className="w-full border-t border-gray-100 text-sm">
+                <tbody>
+                  {g.rows.map((r) => (
+                    <tr key={r.id} className="border-b border-gray-50 align-top last:border-0">
+                      <td className="w-16 px-3 py-1.5 text-xs text-gray-400">{clock(r.timestamp)}</td>
+                      <td className="w-20 px-2 py-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] ${ACTOR_CLASS[r.actor]}`}>{r.actor}</span>
+                      </td>
+                      <td className="w-40 px-2 py-1.5 font-mono text-xs text-gray-600">{r.action}</td>
+                      <td className="px-3 py-1.5 text-gray-700">{r.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          );
+        })}
+        {groups.length === 0 && (
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400">
+            No audit entries yet — run the agent on the inbox.
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,13 +1,50 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { approveChange, markNoAction, rejectOrder } from "@/app/actions";
 import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport } from "@/core/types.js";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 import type { TraceStep } from "@/lib/trace";
-import { clock } from "@/lib/format";
+import { clock, fmtMoney } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { DraftEditor } from "./draft-editor";
+import { Spinner } from "./ui";
+
+/** One plain sentence: what this email is, and what approving it would do. */
+function decisionSummary(args: {
+  processed: boolean;
+  disposition: Disposition;
+  drafts: DraftState[];
+  issues: CheckIssue[];
+  changeProposal: ChangeProposal | null;
+  notes: string[];
+}): string {
+  const { processed, disposition, drafts, issues, changeProposal, notes } = args;
+  if (!processed) return "Not processed yet — press Run agent on the inbox and the agent will read this email.";
+  switch (disposition) {
+    case "AUTO_DRAFT": {
+      const open = drafts.filter((d) => d.status === "DRAFT");
+      if (open.length === 0) return "Order already handled — no draft is waiting on you.";
+      const total = open.reduce((n, d) => n + d.orderTotal, 0);
+      return `Clean order: ${open.length} draft${open.length > 1 ? "s" : ""} worth ${fmtMoney(total)} ready to release. Approving allocates stock and uses credit; rejecting changes nothing.`;
+    }
+    case "PROPOSE_CHANGE":
+      return changeProposal
+        ? `Customer wants to change an existing order: ${changeProposal.description}. Approving applies it; rejecting leaves the order untouched.`
+        : "Customer wants a change to an existing order.";
+    case "ESCALATE":
+      return `Held for a human: ${issues[0]?.message ?? notes[0] ?? "a rule blocked automatic handling"}. Nothing was ordered automatically.`;
+    case "DUPLICATE":
+      return `Same order as an earlier email (${issues[0]?.message ?? notes.find((n) => /duplicate|already seen/i.test(n)) ?? "resend"}) — safe to ignore, nothing new to release.`;
+    case "ROUTE":
+      return `Not an order — routed for a human to read (${notes[0] ?? "non-order email"}).`;
+    case "IGNORE":
+      return "Nothing to action: this is not an order and needs no reply.";
+    default:
+      return "";
+  }
+}
 
 export function EmailDetailClient(props: {
   email: {
@@ -36,15 +73,33 @@ export function EmailDetailClient(props: {
     props;
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const hasDrafts = drafts.length > 0;
+  const summary = decisionSummary({ processed, disposition, drafts, issues, changeProposal, notes });
 
-  function run(fn: () => Promise<{ ok: boolean; reasons: string[] }>, success: string) {
+  function run(label: string, fn: () => Promise<{ ok: boolean; reasons: string[]; detail?: string }>) {
+    setBusy(label);
     startTransition(async () => {
       const res = await fn();
-      setMessage(res.ok ? success : `Refused: ${res.reasons.join("; ")}`);
+      setMessage(res.ok ? res.detail ?? `${label} done.` : `Refused: ${res.reasons.join("; ")}`);
+      setBusy(null);
     });
+  }
+
+  /** Issue text often names the email or order it refers to; make it clickable. */
+  function linkify(text: string) {
+    const parts = text.split(/(E\d{3})/g);
+    return parts.map((part, i) =>
+      /^E\d{3}$/.test(part) ? (
+        <Link key={i} href={`/emails/${part}`} className="font-medium underline">
+          {part}
+        </Link>
+      ) : (
+        <span key={i}>{part}</span>
+      ),
+    );
   }
 
   return (
@@ -91,7 +146,7 @@ export function EmailDetailClient(props: {
           <ul className="mt-1 list-inside list-disc text-sm text-amber-800">
             {issues.map((i, idx) => (
               <li key={idx}>
-                <span className="font-mono text-xs">{i.code}</span> — {i.message}
+                <span className="font-mono text-xs">{i.code}</span> — {linkify(i.message)}
               </li>
             ))}
           </ul>
@@ -106,10 +161,11 @@ export function EmailDetailClient(props: {
           </p>
           <div className="mt-2 flex gap-2">
             <button
-              onClick={() => run(() => approveChange(email.emailId), "Change approved.")}
+              onClick={() => run("Change approved", () => approveChange(email.emailId))}
               disabled={isPending}
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
             >
+              {isPending && busy === "Change approved" && <Spinner className="h-3.5 w-3.5" />}
               Approve change
             </button>
           </div>
@@ -130,22 +186,27 @@ export function EmailDetailClient(props: {
         <pre className="whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs text-gray-700">{email.body}</pre>
       </div>
 
-      <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold uppercase text-gray-500">Agent trace</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            {trace.map((t, idx) => (
-              <tr key={idx} className="border-b border-gray-50 last:border-0 align-top">
-                <td className="w-40 py-1 pr-3 text-xs font-medium text-gray-500">{t.label}</td>
-                <td className="py-1 text-gray-700">{t.detail}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <details className="rounded border border-gray-200 bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase text-gray-500">
+          Agent trace · {trace.length} steps
+        </summary>
+        <div className="border-t border-gray-100 p-4">
+          <table className="w-full text-sm">
+            <tbody>
+              {trace.map((t, idx) => (
+                <tr key={idx} className="border-b border-gray-50 last:border-0 align-top">
+                  <td className="w-40 py-1 pr-3 text-xs font-medium text-gray-500">{t.label}</td>
+                  <td className="py-1 text-gray-700">{t.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold uppercase text-gray-500">Human decision</h2>
+        <h2 className="mb-1 text-sm font-semibold uppercase text-gray-500">Human decision</h2>
+        <p className="mb-3 text-sm text-gray-700">{summary}</p>
         {notes.length > 0 && <p className="mb-2 text-xs text-gray-500">{notes.join(" · ")}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -155,21 +216,32 @@ export function EmailDetailClient(props: {
             className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
           />
           <button
-            onClick={() => run(() => rejectOrder(email.emailId, null, reason || "no reason given"), "Rejected.")}
+            onClick={() => run("Rejected", () => rejectOrder(email.emailId, null, reason || "no reason given"))}
             disabled={isPending || !reason.trim()}
-            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            className="flex items-center gap-2 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
+            {isPending && busy === "Rejected" && <Spinner className="h-3.5 w-3.5" />}
             Reject with reason
           </button>
           <button
-            onClick={() => run(() => markNoAction(email.emailId), "Marked as no action.")}
+            onClick={() => run("Marked no action", () => markNoAction(email.emailId))}
             disabled={isPending}
-            className="rounded bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+            className="flex items-center gap-2 rounded bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60"
           >
+            {isPending && busy === "Marked no action" && <Spinner className="h-3.5 w-3.5" />}
             Mark as no-action
           </button>
         </div>
-        {message && <div className="mt-3 rounded bg-gray-50 px-3 py-2 text-sm">{message}</div>}
+        {message && (
+          <div className="mt-3 rounded bg-gray-50 px-3 py-2 text-sm">
+            {message}
+            {/released|allocated/i.test(message) && (
+              <Link href="/dashboard" className="ml-2 font-medium text-blue-700 hover:underline">
+                See stock and credit on the dashboard →
+              </Link>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import type {
   ActionResult,
   AgentStatus,
   AuditRecord,
+  Dashboard,
   DraftState,
   InboxItem,
   ReleaseEdit,
@@ -339,5 +340,49 @@ export class MemoryRepository implements Repository {
 
   async getSnapshot(): Promise<ErpSnapshot> {
     return this.snapshot;
+  }
+
+  async getDashboard(): Promise<Dashboard> {
+    const nameBySku = new Map(this.snapshot.products.map((p) => [p.sku, p]));
+    const inventory = this.snapshot.inventory
+      .map((i) => ({
+        sku: i.sku,
+        name: nameBySku.get(i.sku)?.name ?? i.sku,
+        onHand: i.onHand,
+        allocated: i.allocated,
+        available: i.available,
+        status: nameBySku.get(i.sku)?.status ?? "active",
+      }))
+      .sort((a, b) => a.available - b.available || a.sku.localeCompare(b.sku));
+    const customers = this.snapshot.customers
+      .map((c) => ({
+        customerId: c.customerId,
+        name: c.name,
+        creditLimit: c.creditLimit,
+        openBalance: c.openBalance,
+        headroom: Math.round((c.creditLimit - c.openBalance) * 100) / 100,
+        status: c.status,
+      }))
+      .sort((a, b) => a.headroom - b.headroom);
+    const orders = this.snapshot.orders.slice(0, 25).map((o) => ({
+      soNumber: o.soNumber,
+      customerName: this.snapshot.customers.find((c) => c.customerId === o.customerId)?.name ?? o.customerId,
+      status: o.status,
+      total: 0,
+      releasedAt: null,
+    }));
+    return {
+      inventory,
+      customers,
+      orders,
+      totals: {
+        products: inventory.length,
+        lowStock: inventory.filter((i) => i.available < 10).length,
+        creditLimit: customers.reduce((n, c) => n + c.creditLimit, 0),
+        creditUsed: customers.reduce((n, c) => n + c.openBalance, 0),
+        openOrders: orders.filter((o) => o.status === "OPEN").length,
+        released: orders.filter((o) => o.status === "SHIPPED" || o.status === "PARTIALLY_SHIPPED").length,
+      },
+    };
   }
 }

@@ -3,6 +3,7 @@ import { InboxClient, type InboxRow } from "@/components/inbox-client";
 import { RunPanel } from "@/components/run-panel";
 import { DispositionLegend } from "@/components/legend";
 import { SnapshotCard } from "@/components/snapshot-card";
+import { urgencyOf } from "@/lib/urgency";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,16 @@ export default async function InboxPage() {
     repo.getSnapshot(),
   ]);
 
-  const rows: InboxRow[] = items.map((item) => ({
+  const rows: InboxRow[] = items.map((item) => {
+    const issues = item.result.issues ?? [];
+    const why =
+      item.result.disposition === "ESCALATE"
+        ? issues[0]?.message ?? item.result.notes?.[0] ?? null
+        : item.result.disposition === "DUPLICATE"
+          ? issues[0]?.message ?? item.result.notes?.find((n) => /duplicate|already seen/i.test(n)) ?? null
+          : item.result.changeProposal?.description ?? null;
+
+    return {
     emailId: item.email.emailId,
     receivedAt: item.email.receivedAt,
     fromName: item.email.fromName,
@@ -27,7 +37,10 @@ export default async function InboxPage() {
     draftCount: item.drafts.length,
     canRelease: item.drafts.some((d) => d.status === "DRAFT"),
     processed: item.processed,
-  }));
+      urgency: urgencyOf(item.email.subject, item.email.body),
+      why: why ? why.replace(/\s+/g, " ").slice(0, 110) : null,
+    };
+  });
 
   return (
     <div>
