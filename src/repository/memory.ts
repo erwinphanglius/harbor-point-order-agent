@@ -144,6 +144,10 @@ export class MemoryRepository implements Repository {
     return this.byId.get(emailId) ?? null;
   }
 
+  async listEmailOptions(): Promise<{ emailId: string; subject: string }[]> {
+    return this.items.map((i) => ({ emailId: i.email.emailId, subject: i.email.subject }));
+  }
+
   async listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]> {
     const list = this.audit
       .filter((a) => (!filter?.emailId || a.emailId === filter.emailId))

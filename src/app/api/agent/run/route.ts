@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const snapshot = await repo.getSnapshot();
   const out = await runLlmBatch(emails, snapshot, ORDER_DATE, new Map(), {
     apiKey,
-    concurrency: 8,
+    concurrency: 10,
   });
   await repo.saveAgentResults(out.results, out.usage, DEFAULT_MODEL);
 

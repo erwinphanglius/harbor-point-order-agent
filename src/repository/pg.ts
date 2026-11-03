@@ -151,7 +151,10 @@ export class PgRepository implements Repository {
     const total = counts[0]?.total ?? 0;
     const processed = counts[0]?.processed ?? 0;
     return {
-      model: totals[0]?.model ?? process.env.AGENT_MODEL ?? "openai/gpt-4o-mini",
+      model:
+        totals[0]?.model ??
+        process.env.AGENT_MODEL ??
+        (process.env.OPENCODE_GO_API_KEY ? "glm-5.3-flash" : "openai/gpt-4o-mini"),
       total,
       processed,
       remaining: total - processed,
@@ -523,11 +526,21 @@ export class PgRepository implements Repository {
     return this.buildItem(email, snapshot, orderRows, linesByOrder, auditByEmail);
   }
 
+  async listEmailOptions(): Promise<{ emailId: string; subject: string }[]> {
+    const rows = await this.db
+      .select({ emailId: s.emails.emailId, subject: s.emails.subject })
+      .from(s.emails)
+      .orderBy(desc(s.emails.receivedAt));
+    return rows.map((r) => ({ emailId: r.emailId, subject: r.subject ?? "" }));
+  }
+
   async listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]> {
     let q = this.db.select().from(s.auditLog).$dynamic();
     if (filter?.emailId) q = q.where(eq(s.auditLog.emailId, filter.emailId));
     if (filter?.actor) q = q.where(eq(s.auditLog.actor, filter.actor));
-    const rows = await q.orderBy(desc(s.auditLog.id));
+    // Newest first, capped: the trail grows with every run and the page only
+    // ever shows the last few hundred events.
+    const rows = await q.orderBy(desc(s.auditLog.id)).limit(300);
     return rows.map((a) => ({
       id: a.id,
       timestamp: iso(a.createdAt) ?? "",

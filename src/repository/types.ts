@@ -87,6 +87,8 @@ export interface Repository {
   listInbox(): Promise<InboxItem[]>;
   getEmail(emailId: string): Promise<InboxItem | null>;
   listAudit(filter?: { emailId?: string; actor?: Actor }): Promise<AuditRecord[]>;
+  /** Just the id and subject of each email, for filter dropdowns. */
+  listEmailOptions(): Promise<{ emailId: string; subject: string }[]>;
   listShipTos(customerId: string): Promise<ShipToOption[]>;
   release(emailId: string, soNumber: string): Promise<ActionResult>;
   releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult>;

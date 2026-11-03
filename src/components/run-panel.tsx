@@ -19,7 +19,7 @@ interface Props {
   enabled: boolean;
 }
 
-const BATCH = 5;
+const BATCH = 10;
 
 function fmtCost(n: number): string {
   if (n === 0) return "$0.00";
