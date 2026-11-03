@@ -27,11 +27,12 @@ export function EmailDetailClient(props: {
   changeProposal: ChangeProposal | null;
   drafts: DraftState[];
   emailState: string;
+  processed: boolean;
   emailRejectReason: string | null;
   shipTos: ShipToOption[];
   trace: TraceStep[];
 }) {
-  const { email, classification, disposition, injection, issues, notes, changeProposal, drafts, emailState, emailRejectReason, shipTos, trace } =
+  const { email, classification, disposition, injection, issues, notes, changeProposal, drafts, emailState, emailRejectReason, shipTos, trace, processed } =
     props;
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -51,8 +52,14 @@ export function EmailDetailClient(props: {
       <div className="rounded border border-gray-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <DispositionBadge disposition={disposition} />
-            <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{classification}</span>
+            {processed ? (
+              <>
+                <DispositionBadge disposition={disposition} />
+                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{classification}</span>
+              </>
+            ) : (
+              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Not processed</span>
+            )}
           </div>
           <span className="text-xs text-gray-400">{clock(email.receivedAt)}</span>
         </div>
