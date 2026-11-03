@@ -5,6 +5,7 @@ import { approveChange, markNoAction, rejectOrder } from "@/app/actions";
 import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport } from "@/core/types.js";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 import type { TraceStep } from "@/lib/trace";
+import { clock } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { DraftEditor } from "./draft-editor";
 
@@ -53,7 +54,7 @@ export function EmailDetailClient(props: {
             <DispositionBadge disposition={disposition} />
             <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{classification}</span>
           </div>
-          <span className="text-xs text-gray-400">{email.receivedAt}</span>
+          <span className="text-xs text-gray-400">{clock(email.receivedAt)}</span>
         </div>
         <h1 className="text-lg font-semibold">{email.subject}</h1>
         <p className="mt-1 text-sm text-gray-500">

@@ -11,7 +11,9 @@ if (!process.env.DATABASE_URL) {
   process.exit(0);
 }
 
-const steps = ["db:migrate", "db:seed", "process"];
+// The agent is NOT run at build time: the demo opens on the raw inbox and a
+// human presses "Run agent" (see /api/agent/run).
+const steps = ["db:migrate", "db:seed"];
 
 for (const step of steps) {
   console.log(`\n> npm run ${step}`);

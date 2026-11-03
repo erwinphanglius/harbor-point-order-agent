@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getRepository } from "@/lib/repo";
+import { clock } from "@/lib/format";
 import type { Actor } from "@/repository/types.js";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export default async function AuditPage({
           <tbody>
             {audit.map((a) => (
               <tr key={a.id} className="border-b border-gray-100 last:border-0 align-top">
-                <td className="px-3 py-2 text-xs text-gray-500">{a.timestamp}</td>
+                <td className="px-3 py-2 text-xs text-gray-500">{clock(a.timestamp)}</td>
                 <td className="px-3 py-2">
                   {a.emailId ? (
                     <Link href={`/emails/${a.emailId}`} className="text-blue-700 hover:underline">

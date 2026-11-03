@@ -19,6 +19,13 @@ export interface InboxRow {
   amount: number | null;
   draftCount: number;
   canRelease: boolean;
+  processed: boolean;
+}
+
+function senderLabel(r: InboxRow): string {
+  if (r.customerName) return r.customerName;
+  const domain = r.fromEmail.split("@")[1]?.toLowerCase() ?? "";
+  return domain ? `${domain} (unverified)` : "Unknown sender";
 }
 
 const FILTERS: { key: string; label: string; disposition?: Disposition }[] = [
@@ -41,7 +48,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
-      if (filter !== "all" && r.disposition !== filter) return false;
+      if (filter !== "all" && (!r.processed || r.disposition !== filter)) return false;
       if (!q) return true;
       return (
         r.subject.toLowerCase().includes(q) ||
@@ -55,7 +62,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: rows.length };
-    for (const r of rows) c[r.disposition] = (c[r.disposition] ?? 0) + 1;
+    for (const r of rows) if (r.processed) c[r.disposition] = (c[r.disposition] ?? 0) + 1;
     return c;
   }, [rows]);
 
@@ -148,9 +155,13 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                     {r.subject}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-600">{r.customerName ?? "—"}</td>
+                <td className="px-3 py-2 text-xs text-gray-600">{senderLabel(r)}</td>
                 <td className="px-3 py-2">
-                  <DispositionBadge disposition={r.disposition} />
+                  {r.processed ? (
+                    <DispositionBadge disposition={r.disposition} />
+                  ) : (
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Not processed</span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">{fmtMoney(r.amount)}</td>
               </tr>

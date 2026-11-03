@@ -128,6 +128,19 @@ export const emails = pgTable("emails", {
   changeProposalJson: text("change_proposal_json"),
   duplicateOfEmailId: text("duplicate_of_email_id"),
   rejectReason: text("reject_reason"),
+  processedAt: timestamp("processed_at"),
+});
+
+export const agentRuns = pgTable("agent_runs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  model: text("model").notNull(),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  emailsProcessed: integer("emails_processed").notNull().default(0),
+  tokensIn: integer("tokens_in").notNull().default(0),
+  tokensOut: integer("tokens_out").notNull().default(0),
+  costUsd: numeric("cost_usd").notNull().default("0"),
+  status: text("status").notNull().default("done"),
 });
 
 export const auditLog = pgTable("audit_log", {

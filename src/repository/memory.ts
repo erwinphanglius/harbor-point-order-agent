@@ -5,6 +5,7 @@ import { resolveUnitPrice } from "../core/pricing.js";
 import type {
   Actor,
   ActionResult,
+  AgentStatus,
   AuditRecord,
   DraftState,
   InboxItem,
@@ -79,6 +80,7 @@ export class MemoryRepository implements Repository {
         amount: drafts.length > 0 ? amount : null,
         emailState: "pending",
         emailRejectReason: null,
+        processed: true,
       });
     }
     return items;
@@ -105,6 +107,33 @@ export class MemoryRepository implements Repository {
 
   async processInbox(): Promise<ProcessingResult[]> {
     return this.results;
+  }
+
+  async listUnprocessed(_limit: number): Promise<Email[]> {
+    // Memory mode evaluates the whole inbox at boot; there is nothing queued.
+    return [];
+  }
+
+  async saveAgentResults(): Promise<void> {
+    // Memory mode is a read-only stand-in for local browsing of the seeded run.
+  }
+
+  async getAgentStatus(): Promise<AgentStatus> {
+    return {
+      model: "offline rules engine",
+      total: this.items.length,
+      processed: this.items.length,
+      remaining: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      runs: 0,
+      lastRunAt: null,
+    };
+  }
+
+  async resetDemo(): Promise<void> {
+    // Nothing to reset: memory mode never writes.
   }
 
   async listInbox(): Promise<InboxItem[]> {
