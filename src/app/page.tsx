@@ -2,7 +2,7 @@ import { getRepository } from "@/lib/repo";
 import { InboxClient, type InboxRow } from "@/components/inbox-client";
 import { RunPanel } from "@/components/run-panel";
 import { DispositionLegend } from "@/components/legend";
-import { SnapshotCard } from "@/components/snapshot-card";
+import { RunResult } from "@/components/run-result";
 import { issueLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +82,7 @@ export default async function InboxPage() {
 
       <div className="mb-4 grid gap-4 md:grid-cols-[2fr_1fr]">
         <DispositionLegend rows={rows} />
-        <SnapshotCard snapshot={snapshot} />
+        <RunResult rows={rows} status={status} snapshot={snapshot} />
       </div>
 
       <InboxClient rows={rows} />

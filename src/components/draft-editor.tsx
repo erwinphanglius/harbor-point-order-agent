@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { releaseOrder, releaseWithEditsAction, rejectOrder } from "@/app/actions";
+import { releaseWithEditsAction } from "@/app/actions";
 import { fmtMoney } from "@/lib/format";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 
@@ -19,7 +19,6 @@ export function DraftEditor({
   );
   const [shipToId, setShipToId] = useState(draft.shipToId);
   const [requestedDate, setRequestedDate] = useState(draft.requestedDate ?? "");
-  const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -48,12 +47,24 @@ export function DraftEditor({
     return draft.lines.map((l) => ({ sku: l.sku, quantity: quantities[l.sku] ?? l.quantity }));
   }
 
+  // What a person has changed, so the button says so before it releases.
+  const changedLines = draft.lines.filter((l) => (quantities[l.sku] ?? l.quantity) !== l.quantity);
+  const shipToChanged = shipToId !== draft.shipToId;
+  const dateChanged = requestedDate !== (draft.requestedDate ?? "");
+  const edited = changedLines.length > 0 || shipToChanged || dateChanged;
+  const editedNote = [
+    ...changedLines.map((l) => `${l.sku} ${l.quantity} → ${quantities[l.sku]}`),
+    ...(shipToChanged ? [`ship-to ${shipToId}`] : []),
+    ...(dateChanged ? [`date ${requestedDate || "cleared"}`] : []),
+  ];
+  const liveTotal = draft.lines.reduce((sum, l) => sum + l.unitPrice * (quantities[l.sku] ?? l.quantity), 0);
+
   return (
     <div className="rounded border border-gray-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="font-medium">{draft.soNumber}</div>
         <div className="text-sm text-gray-600">
-          {draft.customerName} · PO {draft.customerPo || "—"} · total {fmtMoney(draft.orderTotal)}
+          {draft.customerName} · PO {draft.customerPo || "—"} · total {fmtMoney(liveTotal)}
         </div>
       </div>
 
@@ -114,40 +125,32 @@ export function DraftEditor({
 
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={() => run(() => releaseOrder(emailId, draft.soNumber), "Released.")}
+          onClick={() =>
+            run(
+              () =>
+                releaseWithEditsAction(emailId, draft.soNumber, {
+                  lines: editedLines(),
+                  shipToId,
+                  requestedDate: requestedDate || null,
+                }),
+              edited ? "Your edits were saved and the order released." : "Released.",
+            )
+          }
           disabled={isPending}
           className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           Approve &amp; release
         </button>
-        <button
-          onClick={() =>
-            run(
-              () => releaseWithEditsAction(emailId, draft.soNumber, { lines: editedLines(), shipToId, requestedDate: requestedDate || null }),
-              "Edits saved and released.",
-            )
-          }
-          disabled={isPending}
-          className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          Save edits then approve
-        </button>
-        <div className="flex items-center gap-1">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Rejection reason (audited)"
-            className="w-48 rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-          <button
-            onClick={() => run(() => rejectOrder(emailId, draft.soNumber, reason || "no reason given"), "Rejected.")}
-            disabled={isPending || !reason.trim()}
-            className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-          >
-            Reject
-          </button>
-        </div>
+        {edited && (
+          <span className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800" title={editedNote.join(", ")}>
+            edited: {editedNote.slice(0, 2).join(", ")}
+            {editedNote.length > 2 ? ` +${editedNote.length - 2}` : ""}
+          </span>
+        )}
       </div>
+      <p className="mt-2 text-xs text-gray-500">
+        Whatever is on screen is saved first, then released. Stock, credit and price are re-checked at that moment.
+      </p>
 
       {message && <div className="mt-3 rounded bg-gray-50 px-3 py-2 text-sm">{message}</div>}
     </div>
