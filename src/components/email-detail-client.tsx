@@ -6,19 +6,23 @@ import { approveChange, markNoAction, rejectOrder } from "@/app/actions";
 import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport } from "@/core/types.js";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 import type { TraceStep } from "@/lib/trace";
-import { clock, fmtMoney } from "@/lib/format";
+import { clock, fmtMoney, reviewStatusClass, reviewStatusLabel } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { DraftEditor } from "./draft-editor";
-import { Spinner } from "./ui";
-
-const STATUS_STYLE: Record<string, string> = {
-  released: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-red-100 text-red-800",
-  approved: "bg-blue-100 text-blue-800",
-  no_action: "bg-gray-100 text-gray-600",
-};
 import { SuggestedReply } from "./suggested-reply";
+import { Spinner } from "./ui";
 import { suggestedReply } from "@/lib/reply";
+
+const SO_PATTERN = /\bSO-\d{3,}\b/g;
+const LINKABLE = /(\bSO-\d{3,}\b|\bE\d{3}\b)/g;
+
+/** The repository's reply already says what happened; reuse its verb as the banner headline. */
+const VERBS: [RegExp, string][] = [
+  [/^Change approved on /, "Change approved"],
+  [/^Cancelled /, "Cancelled"],
+  [/^Returned /, "Returned"],
+  [/^Released /, "Released"],
+];
 
 /** One plain sentence: what this email is, and what approving it would do. */
 function decisionSummary(args: {
@@ -78,11 +82,30 @@ export function EmailDetailClient(props: {
   shipTos: ShipToOption[];
   trace: TraceStep[];
   duplicateOf: string | null;
+  duplicateOfSo: string | null;
   reviewStatus: string;
 }) {
-  const { email, classification, disposition, injection, issues, notes, changeProposal, drafts, emailState, emailRejectReason, shipTos, trace, processed, duplicateOf, reviewStatus } =
-    props;
+  const {
+    email,
+    classification,
+    disposition,
+    injection,
+    issues,
+    notes,
+    changeProposal,
+    drafts,
+    emailState,
+    emailRejectReason,
+    shipTos,
+    trace,
+    processed,
+    duplicateOf,
+    duplicateOfSo,
+    reviewStatus,
+  } = props;
   const soNumbers = [...drafts.map((d) => d.soNumber), ...(changeProposal ? [changeProposal.soNumber] : [])];
+  const ownSos = new Set(soNumbers);
+  const relatedSos = [...new Set((email.subject + "\n" + email.body).match(SO_PATTERN) ?? [])].filter((so) => !ownSos.has(so));
   const reply = processed
     ? suggestedReply({
         disposition,
@@ -96,6 +119,7 @@ export function EmailDetailClient(props: {
     : null;
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [headline, setHeadline] = useState<string | null>(null);
   const [ok, setOk] = useState<boolean | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -103,28 +127,43 @@ export function EmailDetailClient(props: {
   const hasDrafts = drafts.length > 0;
   const summary = decisionSummary({ processed, disposition, drafts, issues, changeProposal, notes });
 
-  function run(label: string, fn: () => Promise<{ ok: boolean; reasons: string[]; detail?: string }>) {
+  function run(label: string, fn: () => Promise<{ ok: boolean; reasons: string[]; detail?: string }>, successHeadline: string) {
     setBusy(label);
     startTransition(async () => {
       const res = await fn();
       setOk(res.ok);
-      setMessage(res.ok ? res.detail ?? `${label} done.` : `Refused: ${res.reasons.join("; ")}`);
+      if (res.ok) {
+        const detail = res.detail ?? "";
+        const verb = VERBS.find(([pattern]) => pattern.test(detail));
+        setHeadline(verb ? verb[1] : successHeadline);
+        setMessage(verb ? detail.replace(verb[0], "") : detail);
+      } else {
+        setHeadline("Nothing changed");
+        setMessage(`Refused: ${res.reasons.join("; ")}`);
+      }
       setBusy(null);
     });
   }
 
-  /** Issue text often names the email or order it refers to; make it clickable. */
-  function linkify(text: string) {
-    const parts = text.split(/(E\d{3})/g);
-    return parts.map((part, i) =>
-      /^E\d{3}$/.test(part) ? (
-        <Link key={i} href={`/emails/${part}`} className="font-medium underline">
-          {part}
-        </Link>
-      ) : (
-        <span key={i}>{part}</span>
-      ),
-    );
+  /** Plain text with the email and order references the reader may want to open. */
+  function withLinks(text: string) {
+    return text.split(LINKABLE).map((part, i) => {
+      if (/^SO-\d{3,}$/.test(part)) {
+        return (
+          <Link key={i} href={`/so/${part}`} className="font-medium text-blue-700 underline">
+            {part}
+          </Link>
+        );
+      }
+      if (/^E\d{3}$/.test(part)) {
+        return (
+          <Link key={i} href={`/emails/${part}`} className="font-medium underline">
+            {part}
+          </Link>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
   }
 
   return (
@@ -143,12 +182,12 @@ export function EmailDetailClient(props: {
           </div>
           <span className="text-xs text-gray-400">{clock(email.receivedAt)}</span>
         </div>
-        {(soNumbers.length > 0 || duplicateOf) && (
+        {(soNumbers.length > 0 || duplicateOf || relatedSos.length > 0) && (
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
             {soNumbers.map((so) => (
-              <span key={so} className="rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-700">
+              <Link key={so} href={`/so/${so}`} className="rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 hover:underline">
                 {so}
-              </span>
+              </Link>
             ))}
             {soNumbers[0] && (
               <Link href="/dashboard" className="text-blue-700 hover:underline">
@@ -156,9 +195,22 @@ export function EmailDetailClient(props: {
               </Link>
             )}
             {duplicateOf && (
-              <Link href={`/emails/${duplicateOf}`} className="rounded bg-violet-100 px-2 py-0.5 text-violet-800 hover:underline">
-                duplicate of {duplicateOf} →
+              <Link
+                href={duplicateOfSo ? `/so/${duplicateOfSo}` : `/emails/${duplicateOf}`}
+                className="rounded bg-violet-100 px-2 py-0.5 text-violet-800 hover:underline"
+              >
+                duplicate of {duplicateOfSo ?? duplicateOf} →
               </Link>
+            )}
+            {relatedSos.length > 0 && (
+              <span className="flex flex-wrap items-center gap-1 text-gray-500">
+                other orders named in this email:
+                {relatedSos.map((so) => (
+                  <Link key={so} href={`/so/${so}`} className="rounded bg-blue-50 px-1.5 py-0.5 font-mono text-blue-800 hover:underline">
+                    {so}
+                  </Link>
+                ))}
+              </span>
             )}
           </div>
         )}
@@ -166,9 +218,9 @@ export function EmailDetailClient(props: {
         <p className="mt-1 text-sm text-gray-500">
           From {email.fromName} &lt;{email.fromEmail}&gt; to {email.to}
         </p>
-        {emailState !== "pending" && (
+        {(emailState !== "pending" || emailRejectReason) && (
           <p className="mt-2 text-sm text-gray-500">
-            {emailState === "no_action" ? "Marked as no action." : ""}
+            {emailState === "no_action" ? "Closed: no action needed." : ""}
             {emailRejectReason ? ` Rejection reason: ${emailRejectReason}` : ""}
           </p>
         )}
@@ -190,47 +242,68 @@ export function EmailDetailClient(props: {
           <ul className="mt-1 list-inside list-disc text-sm text-amber-800">
             {issues.map((i, idx) => (
               <li key={idx}>
-                <span className="font-mono text-xs">{i.code}</span> — {linkify(i.message)}
+                <span className="font-mono text-xs">{i.code}</span> — {withLinks(i.message)}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {changeProposal && (
-        <div className="rounded border border-blue-200 bg-blue-50 p-4">
-          <div className="font-medium text-blue-900">Proposed change</div>
-          <p className="mt-1 text-sm text-blue-800">
-            {changeProposal.description} (order {changeProposal.soNumber}, status {changeProposal.orderStatus})
-          </p>
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => run("Change approved", () => approveChange(email.emailId))}
-              disabled={isPending}
-              className="flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-            >
-              {isPending && busy === "Change approved" && <Spinner className="h-3.5 w-3.5" />}
-              Approve change
-            </button>
-          </div>
-        </div>
-      )}
-
-      {hasDrafts && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase text-gray-500">Extracted proposal</h2>
-          {drafts.map((d) => (
-            <DraftEditor key={d.soNumber} emailId={email.emailId} draft={d} shipTos={shipTos} />
-          ))}
-        </div>
-      )}
-
-      {reply && <SuggestedReply text={reply} />}
-
       <div className="rounded border border-gray-200 bg-white p-4">
         <h2 className="mb-2 text-sm font-semibold uppercase text-gray-500">Raw email</h2>
-        <pre className="whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs text-gray-700">{email.body}</pre>
+        <pre className="whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs text-gray-700">{withLinks(email.body)}</pre>
       </div>
+
+      {processed && (
+        <section className="rounded-lg border-2 border-dashed border-violet-300 bg-violet-50/60 p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="rounded bg-violet-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+              AI-generated
+            </span>
+            <span className="text-xs text-violet-900">Written by the agent from this email — check it before you act on it.</span>
+          </div>
+
+          <p className="text-sm text-gray-800">{summary}</p>
+
+          {changeProposal && (
+            <div className="mt-4 rounded border border-blue-200 bg-white p-3">
+              <div className="text-sm font-semibold text-blue-900">Proposed change</div>
+              <p className="mt-1 text-sm text-blue-800">
+                {changeProposal.description} (order{" "}
+                <Link href={`/so/${changeProposal.soNumber}`} className="font-medium underline">
+                  {changeProposal.soNumber}
+                </Link>
+                , status {changeProposal.orderStatus})
+              </p>
+              <div className="mt-2">
+                <button
+                  onClick={() => run("Change approved", () => approveChange(email.emailId), "Change approved")}
+                  disabled={isPending}
+                  className="flex items-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {isPending && busy === "Change approved" && <Spinner className="h-3.5 w-3.5" />}
+                  Approve change
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hasDrafts && (
+            <div className="mt-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700">Draft order — edit before releasing</h3>
+              {drafts.map((d) => (
+                <DraftEditor key={d.soNumber} emailId={email.emailId} draft={d} shipTos={shipTos} />
+              ))}
+            </div>
+          )}
+
+          {reply && (
+            <div className="mt-4">
+              <SuggestedReply text={reply} />
+            </div>
+          )}
+        </section>
+      )}
 
       <details className="rounded border border-gray-200 bg-white">
         <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase text-gray-500">
@@ -240,9 +313,9 @@ export function EmailDetailClient(props: {
           <table className="w-full text-sm">
             <tbody>
               {trace.map((t, idx) => (
-                <tr key={idx} className="border-b border-gray-50 last:border-0 align-top">
+                <tr key={idx} className="border-b border-gray-50 align-top last:border-0">
                   <td className="w-40 py-1 pr-3 text-xs font-medium text-gray-500">{t.label}</td>
-                  <td className="py-1 text-gray-700">{t.detail}</td>
+                  <td className="py-1 text-gray-700">{withLinks(t.detail)}</td>
                 </tr>
               ))}
             </tbody>
@@ -253,12 +326,12 @@ export function EmailDetailClient(props: {
       <div className="rounded border border-gray-200 bg-white p-4">
         <h2 className="mb-1 text-sm font-semibold uppercase text-gray-500">Human decision</h2>
         {reviewStatus !== "pending" && (
-          <p className={`mb-2 inline-block rounded px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLE[reviewStatus] ?? "bg-gray-100 text-gray-600"}`}>
-            {reviewStatus.replace("_", " ")}
+          <p className={`mb-2 inline-block rounded px-2 py-0.5 text-xs font-medium ${reviewStatusClass(reviewStatus)}`}>
+            {reviewStatusLabel(reviewStatus)}
             {reviewStatus === "released" && drafts[0] ? ` · ${drafts[0].soNumber} · ${fmtMoney(drafts[0].orderTotal)} credit used` : ""}
           </p>
         )}
-        <p className="mb-3 text-sm text-gray-700">{summary}</p>
+        <p className="mb-3 text-sm text-gray-600">Nothing is released, changed or cancelled without this step.</p>
         <div className="mb-3">
           {message && (
             <div
@@ -267,8 +340,8 @@ export function EmailDetailClient(props: {
                 ok === false ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"
               }`}
             >
-              <span className="font-medium">{ok === false ? "Nothing changed." : "Done."}</span> {message}
-              {/released|allocated|stock|credit/i.test(message) && (
+              <span className="font-medium">{headline ?? "Done"}:</span> {message}
+              {ok !== false && /stock|credit/i.test(message) && (
                 <Link href="/dashboard" className="ml-2 font-medium underline">
                   See stock and credit →
                 </Link>
@@ -285,7 +358,7 @@ export function EmailDetailClient(props: {
             className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
           />
           <button
-            onClick={() => run("Rejected", () => rejectOrder(email.emailId, null, reason || "no reason given"))}
+            onClick={() => run("Rejected", () => rejectOrder(email.emailId, null, reason || "no reason given"), "Rejected")}
             disabled={isPending || !reason.trim()}
             className="flex items-center gap-2 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
@@ -293,12 +366,12 @@ export function EmailDetailClient(props: {
             Reject with reason
           </button>
           <button
-            onClick={() => run("Marked no action", () => markNoAction(email.emailId))}
+            onClick={() => run("Marked no action", () => markNoAction(email.emailId), "No action needed")}
             disabled={isPending}
             className="flex items-center gap-2 rounded bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60"
           >
             {isPending && busy === "Marked no action" && <Spinner className="h-3.5 w-3.5" />}
-            Mark as no-action
+            Mark as no action needed
           </button>
         </div>
       </div>

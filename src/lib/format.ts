@@ -31,6 +31,34 @@ export function dispositionLabel(d: Disposition): string {
   }
 }
 
+export function reviewStatusLabel(s: string): string {
+  switch (s) {
+    case "released":
+      return "Released";
+    case "rejected":
+      return "Rejected";
+    case "approved":
+      return "Change approved";
+    case "no_action":
+      return "No action needed";
+    default:
+      return s.replace("_", " ");
+  }
+}
+
+export function reviewStatusClass(s: string): string {
+  switch (s) {
+    case "released":
+      return "bg-emerald-100 text-emerald-800";
+    case "rejected":
+      return "bg-red-100 text-red-800";
+    case "approved":
+      return "bg-blue-100 text-blue-800";
+    default:
+      return "bg-gray-100 text-gray-600";
+  }
+}
+
 export function dispositionBadgeClass(d: Disposition): string {
   switch (d) {
     case "AUTO_DRAFT":

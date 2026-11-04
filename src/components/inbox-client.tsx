@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { Disposition } from "@/core/types.js";
 import { bulkRelease, rejectOrder } from "@/app/actions";
-import { fmtMoney } from "@/lib/format";
+import { fmtMoney, reviewStatusClass, reviewStatusLabel } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { Spinner } from "./ui";
 
@@ -26,14 +26,8 @@ export interface InboxRow {
   soNumbers: string[];
   reviewStatus: string;
   duplicateOf: string | null;
+  duplicateOfSo: string | null;
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  released: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-red-100 text-red-800",
-  approved: "bg-blue-100 text-blue-800",
-  no_action: "bg-gray-100 text-gray-600",
-};
 
 function senderLabel(r: InboxRow): string {
   if (r.customerName) return r.customerName;
@@ -139,7 +133,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search sender, subject, customer…"
+            placeholder="Search sender, subject, SO, customer…"
             className="rounded border border-gray-300 px-3 py-1 text-sm"
           />
           {releasableSelected.length > 0 && (
@@ -161,10 +155,11 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
-              <th className="px-3 py-2 w-8"> </th>
+              <th className="w-8 px-3 py-2"> </th>
               <th className="px-3 py-2">Time</th>
               <th className="px-3 py-2">Sender</th>
               <th className="px-3 py-2">Subject</th>
+              <th className="px-3 py-2">Order (SO)</th>
               <th className="px-3 py-2">Customer</th>
               <th className="px-3 py-2">Disposition</th>
               <th className="px-3 py-2 text-right">Amount</th>
@@ -189,33 +184,54 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                   <Link href={`/emails/${r.emailId}`} className="hover:underline">
                     {r.subject}
                   </Link>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    {r.soNumbers.map((so) => (
-                      <span key={so} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-600">
-                        {so}
-                      </span>
-                    ))}
-                    {r.duplicateOf && (
-                      <Link href={`/emails/${r.duplicateOf}`} className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-800 hover:underline">
-                        duplicate of {r.duplicateOf}
+                  {r.duplicateOf && (
+                    <div className="mt-0.5 text-[11px]">
+                      <Link
+                        href={r.duplicateOfSo ? `/so/${r.duplicateOfSo}` : `/emails/${r.duplicateOf}`}
+                        className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-800 hover:underline"
+                      >
+                        duplicate of {r.duplicateOfSo ?? r.duplicateOf}
                       </Link>
-                    )}
-                    {r.reviewStatus !== "pending" && (
-                      <span className={`rounded px-1.5 py-0.5 font-medium capitalize ${STATUS_STYLE[r.reviewStatus] ?? "bg-gray-100 text-gray-600"}`}>
-                        {r.reviewStatus.replace("_", " ")}
-                      </span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {r.why && r.processed && (
                     <div className="mt-0.5 line-clamp-1 text-xs text-gray-500" title={r.why}>
                       {r.why}
                     </div>
                   )}
                 </td>
+                <td className="px-3 py-2 align-top">
+                  {r.soNumbers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {r.soNumbers.map((so) => (
+                        <Link
+                          key={so}
+                          href={`/so/${so}`}
+                          className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700 hover:bg-gray-200 hover:underline"
+                        >
+                          {so}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400" title="This email does not create or change an order">
+                      —
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 align-top text-xs text-gray-600">{senderLabel(r)}</td>
                 <td className="px-3 py-2 align-top">
                   {r.processed ? (
-                    <DispositionBadge disposition={r.disposition} />
+                    <>
+                      <DispositionBadge disposition={r.disposition} />
+                      {r.reviewStatus !== "pending" && (
+                        <div className="mt-1">
+                          <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${reviewStatusClass(r.reviewStatus)}`}>
+                            {reviewStatusLabel(r.reviewStatus)}
+                          </span>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">Not processed</span>
                   )}
@@ -236,7 +252,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-gray-400">
+                <td colSpan={8} className="px-3 py-6 text-center text-gray-400">
                   No emails match.
                 </td>
               </tr>

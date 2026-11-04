@@ -46,8 +46,15 @@ export default async function InboxPage() {
       ],
       reviewStatus: item.reviewStatus,
       duplicateOf: item.result.duplicateOfEmailId ?? null,
+      duplicateOfSo: null,
     };
   });
+
+  // A duplicate points at the email it repeats; show the order instead of the
+  // email id wherever that email produced one.
+  const soByEmail = new Map<string, string>();
+  for (const r of rows) if (r.soNumbers[0]) soByEmail.set(r.emailId, r.soNumbers[0]);
+  for (const r of rows) if (r.duplicateOf) r.duplicateOfSo = soByEmail.get(r.duplicateOf) ?? null;
 
   return (
     <div>

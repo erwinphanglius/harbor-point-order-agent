@@ -52,4 +52,14 @@ describe("MemoryRepository release path", () => {
     const after = (await repo.listAudit({ emailId: "E003", actor: "human" })).length;
     expect(after).toBeGreaterThan(before);
   });
+
+  it("approving a proposed change reads as an approval, not a cancellation", async () => {
+    const item = (await repo.getEmail("E004"))!;
+    const soNumber = item.result.changeProposal!.soNumber;
+    const res = await repo.approveChange("E004");
+    expect(res.ok).toBe(true);
+    expect(res.detail).toContain(`Change approved on ${soNumber}`);
+    expect(res.detail).not.toMatch(/cancelled|back to stock|credit released/i);
+    expect(item.reviewStatus).toBe("approved");
+  });
 });

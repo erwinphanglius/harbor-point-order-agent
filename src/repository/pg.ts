@@ -184,6 +184,9 @@ export class PgRepository implements Repository {
       const email = byEmail.get(result.emailId);
       if (!email) continue;
 
+      // SO numbers are assigned here, so the audit line for a draft is written here too.
+      const drafted: { soNumber: string; lineCount: number; total: number }[] = [];
+
       await this.db
         .insert(s.emails)
         .values({
@@ -220,6 +223,7 @@ export class PgRepository implements Repository {
 
       for (const draft of result.drafts) {
         const soNumber = `SO-${nextSo++}`;
+        drafted.push({ soNumber, lineCount: draft.lines.length, total: draft.orderTotal });
         await this.db
           .insert(s.salesOrders)
           .values({
@@ -253,7 +257,16 @@ export class PgRepository implements Repository {
         }
       }
 
-      for (const entry of result.audit) {
+      const entries = result.audit.flatMap((entry) =>
+        entry.action === "drafted" && drafted.length > 0
+          ? drafted.map((d) => ({
+              ...entry,
+              detail: `Drafted ${d.soNumber} · ${d.lineCount} line(s) · $${d.total.toFixed(2)} — awaiting release`,
+            }))
+          : [entry],
+      );
+
+      for (const entry of entries) {
         await this.db
           .insert(s.auditLog)
           .values({
@@ -881,7 +894,9 @@ export class PgRepository implements Repository {
       return {
         ok: true,
         reasons: [],
-        detail: `${proposal.kind === "cancel" ? "Cancelled" : "Returned"} ${order.soNumber} · ${units} units back to stock · $${value} credit released`,
+        detail: `${proposal.kind === "cancel" ? "Cancelled" : "Returned"} ${order.soNumber} on approval — ${
+          order.releasedAt ? `${units} units back to stock · $${value} of credit released` : "the order was still open, so no stock or credit moved"
+        }`,
       };
     }
 
@@ -890,7 +905,7 @@ export class PgRepository implements Repository {
     return {
       ok: true,
       reasons: [],
-      detail: `Approved change to ${order.soNumber} — the revised quantities still have to be keyed in`,
+      detail: `Change approved on ${order.soNumber} — the revised quantities still have to be keyed in`,
     };
   }
 }
