@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { approveChange, rejectOrder } from "@/app/actions";
+import { approveChange, rejectOrder, restoreEmail } from "@/app/actions";
 import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport, Urgency } from "@/core/types.js";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 import type { TraceStep } from "@/lib/trace";
@@ -257,6 +257,14 @@ export function EmailDetailClient(props: {
         <p className="mt-1 text-sm text-gray-500">
           From {email.fromName} &lt;{email.fromEmail}&gt; to {email.to}
         </p>
+        {processed && urgency.level !== "none" && (
+          <p className="mt-2 text-sm text-gray-700">
+            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${urgency.level === "today" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>
+              {urgency.level === "today" ? "Needs it today" : "Time-pressed"}
+            </span>{" "}
+            {urgency.reason.charAt(0).toUpperCase() + urgency.reason.slice(1)}
+          </p>
+        )}
       </div>
 
       {injection.detected && (
@@ -336,6 +344,26 @@ export function EmailDetailClient(props: {
             </div>
           )}
         </section>
+      )}
+
+      {processed && disposition === "IGNORE" && !decided && (
+        <div className="rounded border border-gray-200 bg-white p-4">
+          <h2 className="text-sm font-semibold uppercase text-gray-500">Auto-ignored</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            The agent classified this as {classification.toLowerCase().replace(/_/g, " ")} and set it aside. Nothing was created, released or charged.
+            Automated mail, notifications and thank-you notes stop here; if a person should still read it, put it back in the queue.
+          </p>
+          <div className="mt-3">
+            <button
+              onClick={() => run("Restored", () => restoreEmail(email.emailId), "Restored")}
+              disabled={isPending}
+              className="flex items-center gap-2 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60"
+            >
+              {isPending && busy === "Restored" && <Spinner className="h-3.5 w-3.5" />}
+              Restore to inbox
+            </button>
+          </div>
+        </div>
       )}
 
       <div className="rounded border border-gray-200 bg-white p-4">
