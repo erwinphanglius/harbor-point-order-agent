@@ -38,6 +38,38 @@ Concretely:
 - **Supabase Auth** protecting the app, with a dev mode that runs open when the
   Supabase env vars are absent.
 
+## The tools the agent acts through
+
+The agent never reads the database directly. Every fact it states and every
+write it performs goes through one of eight tools, which is what lets the audit
+trail show where a number came from and why a decision was made.
+
+| tool | takes | gives back |
+| --- | --- | --- |
+| `lookup_customer` | sender address | customer, ship-to addresses, credit standing |
+| `lookup_product` | a phrase ("nitrile gloves") | the real SKU, unit of sale, status, replacement |
+| `get_contract_price` | SKU + customer | the price that actually applies today |
+| `check_inventory` | SKU + quantity | on hand, incoming, whether the line can be filled |
+| `check_credit` | customer + order value | headroom, hold, limit |
+| `create_draft_order` | resolved lines | an SO and its lines as `DRAFT` — no stock, no credit |
+| `propose_order_change` | open SO + intended change | a queued change for a human to approve |
+| `flag_for_review` | reason + evidence | the email parked for a person, with the summary |
+
+Two consequences worth naming: the agent cannot invent a SKU or a price,
+because the only way to obtain one is a tool call that the audit records; and
+`create_draft_order` has no matching release tool, so the approval gate is
+structural rather than a policy the model is asked to respect.
+
+## What runs where
+
+The demo runs the whole path — ingest, parse, resolve, draft — inside the
+request that the Run agent button makes, which is why it takes about two
+minutes for 40 emails and why the tab has to stay open. In production that work
+belongs in a queue with a worker and a job row, with the UI polling for
+progress; nothing in the data model depends on the work being synchronous.
+Ingestion of mail and the ERP snapshot is the same story: fine in-request for a
+demo with 40 messages, wrong for a mailbox that receives them continuously.
+
 ## What was deliberately not built
 
 - A full ERP / warehouse execution layer — releases are recorded but stock
