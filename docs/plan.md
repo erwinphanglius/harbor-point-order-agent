@@ -1,5 +1,8 @@
 # Harbor Point Order Agent — Implementation Plan
 
+> Kept as it was written during the build. The delivered state, and where it
+> differs from this plan, is in `docs/product-brief.md`.
+
 ## 1. Product brief (summary)
 
 **User.** The ops team at Harbor Point Supply Co. reads ~40 order emails a day,

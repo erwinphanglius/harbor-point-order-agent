@@ -79,6 +79,25 @@ E016 was deduplicated against E015.
 - **Discontinued.** E019/E020 escalate with a suggested successor rather than
   auto-substituting; substitution always needs confirmation (by design).
 
+## How I direct them
+
+The raw prompts are in `docs/task-breakdown.md` (appendix). The habits that made
+the difference:
+
+- **A plan before code, with acceptance criteria I can check.** Every task starts
+  with "finished when…" — three or four conditions that are observable (a page
+  renders X, a release is refused with a reason, tests pass). If the agent cannot
+  name them, the task is not ready.
+- **One task, one branch, one session.** The branch is the unit of context: the
+  agent keeps the plan and the failures for that task and nothing else.
+- **Green checks are the definition of done.** `lint`, `typecheck`, `test` and
+  `build` — not "it looks right". Most of the corrections below were found by a
+  failing check or a counted number, not by reading the diff.
+- **Counts, not vibes.** 40 emails in, 12 drafts, 20 escalations: if the number
+  disagrees with the report, the code is wrong.
+- **Correct the cause, then pin it with a test.** Every correction below ended in
+  a test, so the same mistake could not come back in the next task.
+
 ## Where the coding agent went wrong, and how it was corrected
 
 Phase 1–2 (core):
