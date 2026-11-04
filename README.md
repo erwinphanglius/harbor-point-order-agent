@@ -29,11 +29,18 @@ Open **E012** to see a prompt-injection attempt forced to human review, and
 - **Inbox** (`/`) — every email with time, sender, subject, classification and a
   disposition badge (auto-draft, proposal, escalate, route, duplicate, ignore),
   plus the customer and amount when known. Filter by disposition, search, and
-  bulk-release selected auto-drafts in one click.
-- **Email detail** (`/emails/[id]`) — the raw email, the agent's trace, the
-  extracted (editable) proposal, rule results/warnings, and actions: *Approve &
-  release*, *Save edits then approve*, *Reject with a reason*, *Mark as
-  no-action*.
+  bulk-release selected auto-drafts in one click. Emails the agent judges
+  urgent carry *Needs it today* / *Time-pressed* with the sentence it based that
+  on, and the list sorts them first.
+- **Email detail** (`/emails/[id]`) — the sales order(s) this email produced at
+  the very top, the raw email, the agent's urgency call and reasoning, the
+  extracted (editable) proposal, rule results/warnings, and the human decision:
+  *Approve & release*, *Save edits then approve*, or *Close* with a required
+  reason. Once closed the controls are replaced by a static record of who closed
+  it, when and why, and nothing is released.
+- **Auto-ignored mail** — automated replies, notifications and thank-you notes
+  are set aside automatically, kept in the *Ignore* filter and restorable to the
+  queue in one click, from the list or from the email itself.
 - **Audit** (`/audit`) — the append-only trail, newest first, filterable by
   email and actor (agent / system / human).
 - **Auth** — Supabase email/password via `@supabase/ssr`, with a middleware that
