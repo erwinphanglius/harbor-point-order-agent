@@ -81,8 +81,8 @@ E016 was deduplicated against E015.
 
 ## How I direct them
 
-The raw prompts are in `docs/task-breakdown.md` (appendix). The habits that made
-the difference:
+The raw prompts are in `docs/task-breakdown.md` (appendix) and the full loop is
+in `docs/how-i-direct-agents.md`. The habits that made the difference:
 
 - **A plan before code, with acceptance criteria I can check.** Every task starts
   with "finished when…" — three or four conditions that are observable (a page
