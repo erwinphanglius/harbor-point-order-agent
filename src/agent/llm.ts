@@ -533,10 +533,26 @@ export interface BatchOutcome {
  * layer (which encodes the client's standing rules). This is the line the whole
  * design rests on: interpretation is learned, authority is not.
  */
-function applyPolicy(llm: ProcessingResult, policy: ProcessingResult): ProcessingResult {
+export function applyPolicy(llm: ProcessingResult, policy: ProcessingResult): ProcessingResult {
   if (llm.disposition === policy.disposition) {
     const seen = new Set(llm.issues.map((i) => i.code));
     for (const issue of policy.issues) if (!seen.has(issue.code)) llm.issues.push(issue);
+
+    // One email can ask for several deliveries (three clubs, three ship-tos). The
+    // rule engine reads the per-location lines and splits them; keep that split.
+    if (llm.disposition === "AUTO_DRAFT" && policy.drafts.length > 1) {
+      return {
+        ...llm,
+        drafts: policy.drafts,
+        notes: [
+          ...llm.notes,
+          `split into ${policy.drafts.length} orders, one per delivery address (${policy.drafts
+            .map((d) => d.shipToId)
+            .join(", ")})`,
+        ],
+      };
+    }
+
     return llm;
   }
 
