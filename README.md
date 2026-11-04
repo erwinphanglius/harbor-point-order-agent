@@ -195,6 +195,8 @@ Every agent action, every human release/reject/edit and every system side-effect
 
 ## The written deliverables
 
+- `docs/how-i-direct-agents.md` — the loop I run the coding agents with: the
+  contract per task, the checks I trust, and the corrections that mattered.
 - `docs/product-brief.md` — the user, the problem, the approval line, how success
   would be measured, and the decisions the brief left open (with the reason for
   each).

@@ -193,7 +193,8 @@ acceptance criteria; this is the raw form it was given in.
 ```
 Work in /workspace/projects/harbor-point-order-agent. One branch per task,
 feat/<name>, cut from origin/HEAD. Never touch main, never push, never edit
-.git config or hooks. Read AGENTS.md first.
+.git config or hooks. Read README.md and docs/product-brief.md first — the
+approval line there is the one rule you must not cross.
 
 Core logic goes in src/core as pure functions — no DB, no network, no clock.
 Types first. A test for every rule you add or change. Run npm run lint,
