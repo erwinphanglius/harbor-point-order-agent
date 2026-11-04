@@ -110,7 +110,22 @@ export type Classification =
   | "QUESTION"
   | "SPAM"
   | "AUTO_REPLY"
+  | "NOTIFICATION"
   | "DUPLICATE";
+
+export type UrgencyLevel = "today" | "soon" | "none";
+
+/**
+ * How time-pressured the request is, decided by reading the email. `today` means
+ * the customer needs it on the day they wrote; `soon` is a stated deadline
+ * within the next few days or an explicit "urgent".
+ */
+export interface Urgency {
+  level: UrgencyLevel;
+  reason: string;
+  /** "agent" when the model judged it; "rules" for the offline engine. */
+  source: "agent" | "rules";
+}
 
 export type Disposition =
   | "AUTO_DRAFT"
@@ -176,6 +191,7 @@ export interface ProcessingResult {
   audit: AuditEntry[];
   duplicateOfEmailId: string | null;
   notes: string[];
+  urgency: Urgency;
 }
 
 export interface AuditEntry {

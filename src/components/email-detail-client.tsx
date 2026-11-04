@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useState, useTransition } from "react";
-import { approveChange, markNoAction, rejectOrder } from "@/app/actions";
-import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport } from "@/core/types.js";
+import { approveChange, rejectOrder } from "@/app/actions";
+import type { ChangeProposal, CheckIssue, Classification, Disposition, InjectionReport, Urgency } from "@/core/types.js";
 import type { DraftState, ShipToOption } from "@/repository/types.js";
 import type { TraceStep } from "@/lib/trace";
 import { clock, fmtMoney, reviewStatusClass, reviewStatusLabel } from "@/lib/format";
@@ -84,6 +84,9 @@ export function EmailDetailClient(props: {
   duplicateOf: string | null;
   duplicateOfSo: string | null;
   reviewStatus: string;
+  urgency: Urgency;
+  /** When the last human action on this email happened, if any. */
+  decidedAt: string | null;
 }) {
   const {
     email,
@@ -94,7 +97,6 @@ export function EmailDetailClient(props: {
     notes,
     changeProposal,
     drafts,
-    emailState,
     emailRejectReason,
     shipTos,
     trace,
@@ -102,6 +104,8 @@ export function EmailDetailClient(props: {
     duplicateOf,
     duplicateOfSo,
     reviewStatus,
+    urgency,
+    decidedAt,
   } = props;
   const soNumbers = [...drafts.map((d) => d.soNumber), ...(changeProposal ? [changeProposal.soNumber] : [])];
   const ownSos = new Set(soNumbers);
@@ -126,22 +130,37 @@ export function EmailDetailClient(props: {
 
   const hasDrafts = drafts.length > 0;
   const summary = decisionSummary({ processed, disposition, drafts, issues, changeProposal, notes });
+  const rejectedDraft = drafts.find((d) => d.status === "REJECTED") ?? null;
+  const closedByHuman = reviewStatus === "no_action" || reviewStatus === "rejected";
+  const decided = reviewStatus === "released" || closedByHuman || rejectedDraft !== null;
+  const decisionReason = closedByHuman ? emailRejectReason : rejectedDraft?.rejectReason ?? null;
+  const decidedStatus = reviewStatus === "released" ? "released" : "no_action";
 
   function run(label: string, fn: () => Promise<{ ok: boolean; reasons: string[]; detail?: string }>, successHeadline: string) {
     setBusy(label);
     startTransition(async () => {
-      const res = await fn();
-      setOk(res.ok);
-      if (res.ok) {
-        const detail = res.detail ?? "";
-        const verb = VERBS.find(([pattern]) => pattern.test(detail));
-        setHeadline(verb ? verb[1] : successHeadline);
-        setMessage(verb ? detail.replace(verb[0], "") : detail);
-      } else {
+      try {
+        const res = await fn();
+        setOk(res.ok);
+        if (res.ok) {
+          const detail = res.detail ?? "";
+          const verb = VERBS.find(([pattern]) => pattern.test(detail));
+          setHeadline(verb ? verb[1] : successHeadline);
+          setMessage(verb ? detail.replace(verb[0], "") : detail);
+        } else {
+          setHeadline("Nothing changed");
+          setMessage(`Refused: ${res.reasons.join("; ")}`);
+        }
+      } catch (err) {
+        // A failed request used to vanish silently; say it out loud instead.
+        setOk(false);
         setHeadline("Nothing changed");
-        setMessage(`Refused: ${res.reasons.join("; ")}`);
+        setMessage(
+          `The server rejected the action: ${err instanceof Error ? err.message : String(err)}. Nothing was released or closed.`,
+        );
+      } finally {
+        setBusy(null);
       }
-      setBusy(null);
     });
   }
 
@@ -168,6 +187,58 @@ export function EmailDetailClient(props: {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded border border-gray-200 bg-white px-4 py-2 text-xs">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Sales order</span>
+        {soNumbers.length > 0 ? (
+          soNumbers.map((so) => (
+            <Link
+              key={so}
+              href={`/so/${so}`}
+              className="rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-800 hover:bg-gray-200 hover:underline"
+            >
+              {so}
+            </Link>
+          ))
+        ) : (
+          <span className="rounded bg-gray-50 px-2 py-0.5 font-mono text-gray-400" title="This email does not create or change an order">
+            SO: — not assigned
+          </span>
+        )}
+        {soNumbers[0] && (
+          <Link href="/dashboard" className="text-blue-700 hover:underline">
+            view on dashboard →
+          </Link>
+        )}
+        {duplicateOf && (
+          <Link
+            href={duplicateOfSo ? `/so/${duplicateOfSo}` : `/emails/${duplicateOf}`}
+            className="rounded bg-violet-100 px-2 py-0.5 text-violet-800 hover:underline"
+          >
+            duplicate of {duplicateOfSo ?? duplicateOf} →
+          </Link>
+        )}
+        {relatedSos.length > 0 && (
+          <span className="flex flex-wrap items-center gap-1 text-gray-500">
+            other orders named:
+            {relatedSos.map((so) => (
+              <Link key={so} href={`/so/${so}`} className="rounded bg-blue-50 px-1.5 py-0.5 font-mono text-blue-800 hover:underline">
+                {so}
+              </Link>
+            ))}
+          </span>
+        )}
+        {processed && urgency.level !== "none" && (
+          <span
+            title={urgency.reason}
+            className={`ml-auto rounded px-2 py-0.5 font-medium ${
+              urgency.level === "today" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {urgency.level === "today" ? "Needs it today" : "Time-pressed"}
+          </span>
+        )}
+      </div>
+
       <div className="rounded border border-gray-200 bg-white p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -182,48 +253,10 @@ export function EmailDetailClient(props: {
           </div>
           <span className="text-xs text-gray-400">{clock(email.receivedAt)}</span>
         </div>
-        {(soNumbers.length > 0 || duplicateOf || relatedSos.length > 0) && (
-          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-            {soNumbers.map((so) => (
-              <Link key={so} href={`/so/${so}`} className="rounded bg-gray-100 px-2 py-0.5 font-mono text-gray-700 hover:bg-gray-200 hover:underline">
-                {so}
-              </Link>
-            ))}
-            {soNumbers[0] && (
-              <Link href="/dashboard" className="text-blue-700 hover:underline">
-                view on dashboard →
-              </Link>
-            )}
-            {duplicateOf && (
-              <Link
-                href={duplicateOfSo ? `/so/${duplicateOfSo}` : `/emails/${duplicateOf}`}
-                className="rounded bg-violet-100 px-2 py-0.5 text-violet-800 hover:underline"
-              >
-                duplicate of {duplicateOfSo ?? duplicateOf} →
-              </Link>
-            )}
-            {relatedSos.length > 0 && (
-              <span className="flex flex-wrap items-center gap-1 text-gray-500">
-                other orders named in this email:
-                {relatedSos.map((so) => (
-                  <Link key={so} href={`/so/${so}`} className="rounded bg-blue-50 px-1.5 py-0.5 font-mono text-blue-800 hover:underline">
-                    {so}
-                  </Link>
-                ))}
-              </span>
-            )}
-          </div>
-        )}
         <h1 className="text-lg font-semibold">{email.subject}</h1>
         <p className="mt-1 text-sm text-gray-500">
           From {email.fromName} &lt;{email.fromEmail}&gt; to {email.to}
         </p>
-        {(emailState !== "pending" || emailRejectReason) && (
-          <p className="mt-2 text-sm text-gray-500">
-            {emailState === "no_action" ? "Closed: no action needed." : ""}
-            {emailRejectReason ? ` Rejection reason: ${emailRejectReason}` : ""}
-          </p>
-        )}
       </div>
 
       {injection.detected && (
@@ -305,6 +338,75 @@ export function EmailDetailClient(props: {
         </section>
       )}
 
+      <div className="rounded border border-gray-200 bg-white p-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase text-gray-500">Human decision</h2>
+          {decided && (
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${reviewStatusClass(decidedStatus)}`}>
+              {reviewStatusLabel(decidedStatus)}
+            </span>
+          )}
+        </div>
+
+        {message && (
+          <div
+            role="status"
+            className={`mb-3 rounded border px-3 py-2 text-sm ${
+              ok === false ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"
+            }`}
+          >
+            <span className="font-medium">{headline ?? "Done"}:</span> {message}
+            {ok !== false && /stock|credit/i.test(message) && (
+              <Link href="/dashboard" className="ml-2 font-medium underline">
+                See stock and credit →
+              </Link>
+            )}
+          </div>
+        )}
+
+        {decided ? (
+          <div className="rounded bg-gray-50 px-3 py-2">
+            <p className="text-sm font-medium text-gray-900">
+              {reviewStatus === "released"
+                ? `Released${drafts[0] ? ` ${drafts[0].soNumber}` : ""}${drafts[0] ? ` · ${fmtMoney(drafts[0].orderTotal)} of credit used` : ""}`
+                : `Closed${rejectedDraft ? ` · ${rejectedDraft.soNumber}` : ""} — ${decisionReason ?? "no reason recorded"}`}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {decidedAt ? `${clock(decidedAt)} · ` : ""}recorded in the audit trail
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {reviewStatus === "released"
+                ? "Stock allocated and credit consumed."
+                : "Nothing was released, changed or cancelled."}
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-gray-600">Nothing is released, changed or cancelled without this step.</p>
+            {notes.length > 0 && <p className="mb-2 text-xs text-gray-500">{notes.join(" · ")}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason for closing (audited)"
+                className="w-64 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+              <button
+                onClick={() => run("Closed", () => rejectOrder(email.emailId, null, reason.trim() || "no reason given"), "Closed")}
+                disabled={isPending || !reason.trim()}
+                className="flex items-center gap-2 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {isPending && busy === "Closed" && <Spinner className="h-3.5 w-3.5" />}
+                Close email
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              Closing records the reason in the audit trail and changes nothing in the ERP.
+            </p>
+          </>
+        )}
+      </div>
+
       <details className="rounded border border-gray-200 bg-white">
         <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold uppercase text-gray-500">
           Agent trace · {trace.length} steps
@@ -323,58 +425,6 @@ export function EmailDetailClient(props: {
         </div>
       </details>
 
-      <div className="rounded border border-gray-200 bg-white p-4">
-        <h2 className="mb-1 text-sm font-semibold uppercase text-gray-500">Human decision</h2>
-        {reviewStatus !== "pending" && (
-          <p className={`mb-2 inline-block rounded px-2 py-0.5 text-xs font-medium ${reviewStatusClass(reviewStatus)}`}>
-            {reviewStatusLabel(reviewStatus)}
-            {reviewStatus === "released" && drafts[0] ? ` · ${drafts[0].soNumber} · ${fmtMoney(drafts[0].orderTotal)} credit used` : ""}
-          </p>
-        )}
-        <p className="mb-3 text-sm text-gray-600">Nothing is released, changed or cancelled without this step.</p>
-        <div className="mb-3">
-          {message && (
-            <div
-              role="status"
-              className={`rounded border px-3 py-2 text-sm ${
-                ok === false ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-900"
-              }`}
-            >
-              <span className="font-medium">{headline ?? "Done"}:</span> {message}
-              {ok !== false && /stock|credit/i.test(message) && (
-                <Link href="/dashboard" className="ml-2 font-medium underline">
-                  See stock and credit →
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
-        {notes.length > 0 && <p className="mb-2 text-xs text-gray-500">{notes.join(" · ")}</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason (audited)"
-            className="w-56 rounded border border-gray-300 px-2 py-1 text-sm"
-          />
-          <button
-            onClick={() => run("Rejected", () => rejectOrder(email.emailId, null, reason || "no reason given"), "Rejected")}
-            disabled={isPending || !reason.trim()}
-            className="flex items-center gap-2 rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-          >
-            {isPending && busy === "Rejected" && <Spinner className="h-3.5 w-3.5" />}
-            Reject with reason
-          </button>
-          <button
-            onClick={() => run("Marked no action", () => markNoAction(email.emailId), "No action needed")}
-            disabled={isPending}
-            className="flex items-center gap-2 rounded bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-60"
-          >
-            {isPending && busy === "Marked no action" && <Spinner className="h-3.5 w-3.5" />}
-            Mark as no action needed
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

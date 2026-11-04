@@ -1,4 +1,5 @@
 import type { Email, ErpSnapshot, ProcessingResult } from "../core/types.js";
+import { rulesUrgency } from "../core/urgency.js";
 import { TOOL_DEFINITIONS, createToolContext, getTool, type ToolContext } from "../tools/index.js";
 
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -152,6 +153,7 @@ export async function runOpenRouter(
       audit: [{ actor: "agent", action: "openrouter", detail: "processed via LLM function calling" }],
       duplicateOfEmailId: null,
       notes: [],
+      urgency: rulesUrgency(email),
     });
   }
 

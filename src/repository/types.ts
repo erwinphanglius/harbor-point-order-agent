@@ -139,6 +139,8 @@ export interface Repository {
   releaseWithEdits(emailId: string, soNumber: string, edits: ReleaseEdit): Promise<ActionResult>;
   reject(emailId: string, soNumber: string | null, reason: string): Promise<ActionResult>;
   markNoAction(emailId: string): Promise<ActionResult>;
+  /** Pull an auto-ignored email back in front of a human. */
+  restore(emailId: string): Promise<ActionResult>;
   bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]>;
   approveChange(emailId: string): Promise<ActionResult>;
   getSnapshot(): Promise<ErpSnapshot>;

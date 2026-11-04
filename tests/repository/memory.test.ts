@@ -53,6 +53,28 @@ describe("MemoryRepository release path", () => {
     expect(after).toBeGreaterThan(before);
   });
 
+  it("closes an email with a typed reason and keeps it as the recorded decision", async () => {
+    const res = await repo.reject("E027", null, "no action needed");
+    expect(res.ok).toBe(true);
+    const item = (await repo.getEmail("E027"))!;
+    expect(item.emailState).toBe("no_action");
+    expect(item.emailRejectReason).toBe("no action needed");
+    const audit = await repo.listAudit({ emailId: "E027", actor: "human" });
+    expect(audit.some((a) => a.action === "rejected" && a.detail.includes("no action needed"))).toBe(true);
+  });
+
+  it("restores an auto-ignored email so a human can look at it again", async () => {
+    const ignored = (await repo.listInbox()).find((i) => i.result.disposition === "IGNORE");
+    expect(ignored).toBeTruthy();
+    const res = await repo.restore(ignored!.email.emailId);
+    expect(res.ok).toBe(true);
+    const item = (await repo.getEmail(ignored!.email.emailId))!;
+    expect(item.reviewStatus).toBe("pending");
+    expect(item.result.disposition).toBe("ESCALATE");
+    const audit = await repo.listAudit({ emailId: ignored!.email.emailId, actor: "human" });
+    expect(audit.some((a) => a.action === "restored")).toBe(true);
+  });
+
   it("approving a proposed change reads as an approval, not a cancellation", async () => {
     const item = (await repo.getEmail("E004"))!;
     const soNumber = item.result.changeProposal!.soNumber;

@@ -3,7 +3,6 @@ import { InboxClient, type InboxRow } from "@/components/inbox-client";
 import { RunPanel } from "@/components/run-panel";
 import { DispositionLegend } from "@/components/legend";
 import { SnapshotCard } from "@/components/snapshot-card";
-import { urgencyOf } from "@/lib/urgency";
 import { issueLabel } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +37,15 @@ export default async function InboxPage() {
     draftCount: item.drafts.length,
     canRelease: item.drafts.some((d) => d.status === "DRAFT"),
     processed: item.processed,
-      urgency: item.result.disposition === "IGNORE" ? null : urgencyOf(item.email.subject, item.email.body),
+      // The agent judged this from the message when it read it; before that we show nothing.
+      urgency:
+        item.processed && item.result.disposition !== "IGNORE"
+          ? {
+              level: item.result.urgency.level,
+              reason: item.result.urgency.reason,
+              source: item.result.urgency.source,
+            }
+          : null,
       why: why ? `${issueLabel(item.result.issues[0]?.code ?? "")}: ${why}`.replace(/\s+/g, " ").slice(0, 110) : null,
       soNumbers: [
         ...item.drafts.map((d) => d.soNumber),

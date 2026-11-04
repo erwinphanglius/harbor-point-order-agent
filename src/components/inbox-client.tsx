@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import type { Disposition } from "@/core/types.js";
-import { bulkRelease, rejectOrder } from "@/app/actions";
+import { bulkRelease, rejectOrder, restoreEmail } from "@/app/actions";
 import { fmtMoney, reviewStatusClass, reviewStatusLabel } from "@/lib/format";
 import { DispositionBadge } from "./badge";
 import { Spinner } from "./ui";
@@ -21,7 +21,8 @@ export interface InboxRow {
   draftCount: number;
   canRelease: boolean;
   processed: boolean;
-  urgency: "today" | "urgent" | null;
+  /** Decided by the agent from the message itself; null until it has read the email. */
+  urgency: { level: "today" | "soon" | "none"; reason: string; source: "agent" | "rules" } | null;
   why: string | null;
   soNumbers: string[];
   reviewStatus: string;
@@ -54,7 +55,10 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
   const [isPending, startTransition] = useTransition();
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: rows.length, urgent: rows.filter((r) => r.urgency).length };
+    const c: Record<string, number> = {
+      all: rows.length,
+      urgent: rows.filter((r) => r.urgency && r.urgency.level !== "none").length,
+    };
     for (const r of rows) if (r.processed) c[r.disposition] = (c[r.disposition] ?? 0) + 1;
     return c;
   }, [rows]);
@@ -63,7 +67,7 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
     const q = query.trim().toLowerCase();
     const list = rows.filter((r) => {
       if (filter === "urgent") {
-        if (!r.urgency) return false;
+        if (!r.urgency || r.urgency.level === "none") return false;
       } else if (filter !== "all" && (!r.processed || r.disposition !== filter)) {
         return false;
       }
@@ -77,9 +81,10 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
         (r.customerName ?? "").toLowerCase().includes(q)
       );
     });
-    // Same-day promises first, then newest.
+    // Same-day promises first, then stated-but-not-same-day, then newest.
     return [...list].sort((a, b) => {
-      const rank = (r: InboxRow) => (r.urgency === "today" ? 0 : r.urgency === "urgent" ? 1 : 2);
+      const rank = (r: InboxRow) =>
+        r.urgency?.level === "today" ? 0 : r.urgency?.level === "soon" ? 1 : 2;
       const byRank = rank(a) - rank(b);
       return byRank !== 0 ? byRank : b.receivedAt.localeCompare(a.receivedAt);
     });
@@ -102,6 +107,13 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
     startTransition(async () => {
       const res = await rejectOrder(r.emailId, r.soNumbers[0] ?? null, reason.trim());
       setMessage(res.ok ? res.detail ?? "Rejected." : `Rejected refused: ${res.reasons.join("; ")}`);
+    });
+  }
+
+  function quickRestore(r: InboxRow) {
+    startTransition(async () => {
+      const res = await restoreEmail(r.emailId);
+      setMessage(res.ok ? `${r.emailId} restored — it is back in Escalate for a human decision.` : `Restore refused: ${res.reasons.join("; ")}`);
     });
   }
 
@@ -224,6 +236,20 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                   {r.processed ? (
                     <>
                       <DispositionBadge disposition={r.disposition} />
+                      {r.urgency && r.urgency.level !== "none" && (
+                        <div className="mt-1">
+                          <span
+                            title={r.urgency.reason}
+                            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                              r.urgency.level === "today"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {r.urgency.level === "today" ? "Today" : "Soon"}
+                          </span>
+                        </div>
+                      )}
                       {r.reviewStatus !== "pending" && (
                         <div className="mt-1">
                           <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${reviewStatusClass(r.reviewStatus)}`}>
@@ -238,15 +264,29 @@ export function InboxClient({ rows }: { rows: InboxRow[] }) {
                 </td>
                 <td className="px-3 py-2 align-top text-right">
                   <div>{fmtMoney(r.amount)}</div>
-                  {r.processed && r.reviewStatus !== "released" && r.reviewStatus !== "rejected" && (
+                  {r.processed && r.disposition === "IGNORE" && (
                     <button
-                      onClick={() => quickReject(r)}
+                      onClick={() => quickRestore(r)}
                       disabled={isPending}
-                      className="mt-1 text-[11px] text-gray-400 underline hover:text-red-600 disabled:opacity-50"
+                      className="mt-1 text-[11px] text-gray-400 underline hover:text-gray-900 disabled:opacity-50"
+                      title="Bring this email back for a human decision"
                     >
-                      reject
+                      restore
                     </button>
                   )}
+                  {r.processed &&
+                    r.disposition !== "IGNORE" &&
+                    r.reviewStatus !== "released" &&
+                    r.reviewStatus !== "rejected" &&
+                    r.reviewStatus !== "no_action" && (
+                      <button
+                        onClick={() => quickReject(r)}
+                        disabled={isPending}
+                        className="mt-1 text-[11px] text-gray-400 underline hover:text-red-600 disabled:opacity-50"
+                      >
+                        close
+                      </button>
+                    )}
                 </td>
               </tr>
             ))}

@@ -40,7 +40,7 @@ export function reviewStatusLabel(s: string): string {
     case "approved":
       return "Change approved";
     case "no_action":
-      return "No action needed";
+      return "Closed";
     default:
       return s.replace("_", " ");
   }

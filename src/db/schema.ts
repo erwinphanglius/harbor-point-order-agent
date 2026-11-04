@@ -128,6 +128,10 @@ export const emails = pgTable("emails", {
   changeProposalJson: text("change_proposal_json"),
   duplicateOfEmailId: text("duplicate_of_email_id"),
   rejectReason: text("reject_reason"),
+  urgencyLevel: text("urgency_level"),
+  urgencyReason: text("urgency_reason"),
+  urgencySource: text("urgency_source"),
+  restoredAt: timestamp("restored_at"),
   processedAt: timestamp("processed_at"),
 });
 
