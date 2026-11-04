@@ -59,7 +59,28 @@ export function RunPanel({ status: initial, enabled }: Props) {
       e.returnValue = "";
     };
     window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
+
+    // In-app links (an email, an order) do not unload the tab, but they do hide
+    // the run, so ask before walking away from it.
+    const guard = (e: MouseEvent) => {
+      const link = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link) return;
+      const href = link.getAttribute("href") ?? "";
+      if (!href || href.startsWith("#") || link.target === "_blank") return;
+      const next = new URL(href, window.location.href);
+      if (next.pathname === window.location.pathname && next.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.confirm("The agent is still running. Leaving this page stops it after the batch in flight. Leave anyway?")) {
+        stop.current = true;
+        window.location.href = next.href;
+      }
+    };
+    document.addEventListener("click", guard, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", guard, true);
+    };
   }, [running]);
 
   const pct = status.total === 0 ? 0 : Math.round((status.processed / status.total) * 100);
@@ -165,6 +186,13 @@ export function RunPanel({ status: initial, enabled }: Props) {
         </div>
       </div>
 
+      {running ? (
+        <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="font-medium">Run in progress — leave this tab alone.</span> Refreshing, closing or moving to
+          another page stops it after the batch in flight; come back and it carries on from where it stopped.
+        </div>
+      ) : null}
+
       <div className="mt-3">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
           <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
@@ -185,7 +213,7 @@ export function RunPanel({ status: initial, enabled }: Props) {
             ? eta
               ? `About ${eta < 60 ? `${eta} seconds` : `${Math.ceil(eta / 60)} minute${Math.ceil(eta / 60) > 1 ? "s" : ""}`} left — don't refresh or close this tab.`
               : "Working — don't refresh or close this tab."
-            : `${status.total} emails, usually about 2 minutes in batches of ${BATCH}.`}
+            : `${status.total} emails, about 2 minutes in batches of ${BATCH} — keep this tab open while it runs.`}
         </p>
       </div>
 
