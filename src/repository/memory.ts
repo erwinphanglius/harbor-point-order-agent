@@ -339,7 +339,7 @@ export class MemoryRepository implements Repository {
     if (!v.ok) return { ok: false, reasons: [v.reason ?? "Change cannot be applied"] };
     item.reviewStatus = "approved";
     this.appendAudit(emailId, "human", "approved_change", `Approved change to ${proposal.soNumber}: ${proposal.description}`);
-    return { ok: true, reasons: [], detail: `Approved change to ${proposal.soNumber}` };
+    return { ok: true, reasons: [], detail: `Change approved on ${proposal.soNumber}: ${proposal.description}` };
   }
 
   async getSnapshot(): Promise<ErpSnapshot> {

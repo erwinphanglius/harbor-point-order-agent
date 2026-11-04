@@ -16,6 +16,10 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
   const trace = buildTrace(item.result, snapshot);
   const shipTos = item.result.customerId ? await repo.listShipTos(item.result.customerId) : [];
 
+  // A duplicate points at another email; link to that email's order when it has one.
+  const duplicate = item.result.duplicateOfEmailId ? await repo.getEmail(item.result.duplicateOfEmailId) : null;
+  const duplicateOfSo = duplicate?.drafts[0]?.soNumber ?? duplicate?.result.changeProposal?.soNumber ?? null;
+
   return (
     <div>
       <div className="mb-4">
@@ -55,6 +59,7 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
         shipTos={shipTos}
         trace={trace}
         duplicateOf={item.result.duplicateOfEmailId ?? null}
+        duplicateOfSo={duplicateOfSo}
         reviewStatus={item.reviewStatus}
       />
     </div>

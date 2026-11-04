@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+/** Suggested reply text, marked as agent-written inside the AI panel. */
 export function SuggestedReply({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -16,18 +17,18 @@ export function SuggestedReply({ text }: { text: string }) {
   }
 
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
+    <div>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase text-gray-500">Suggested reply</h2>
+        <h3 className="text-sm font-semibold text-gray-700">Suggested reply</h3>
         <button
           onClick={copy}
-          className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-100"
+          className="rounded border border-violet-300 bg-white px-2 py-0.5 text-xs text-gray-700 hover:bg-violet-50"
         >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <p className="whitespace-pre-wrap rounded bg-gray-50 p-3 text-sm text-gray-700">{text}</p>
-      <p className="mt-2 text-xs text-gray-400">Nothing is sent from here — copy it into your own email.</p>
+      <p className="whitespace-pre-wrap rounded border border-violet-200 bg-white p-3 text-sm text-gray-700">{text}</p>
+      <p className="mt-2 text-xs text-gray-500">Nothing is sent from here — copy it into your own email.</p>
     </div>
   );
 }
