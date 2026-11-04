@@ -47,29 +47,30 @@ export default async function DashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
-                <th className="px-3 py-2">SKU</th>
+                <th className="px-3 py-2 whitespace-nowrap">SKU</th>
                 <th className="px-3 py-2">Product</th>
-                <th className="px-3 py-2 text-right">List</th>
-                <th className="px-3 py-2 text-right">On hand</th>
-                <th className="px-3 py-2 text-right">Allocated</th>
-                <th className="px-3 py-2 text-right">Available</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">List</th>
+                <th className="px-3 py-2 text-right whitespace-nowrap">Available</th>
               </tr>
             </thead>
             <tbody>
               {dash.inventory.map((i) => (
                 <tr key={i.sku} className="border-b border-gray-100 last:border-0">
-                  <td className="px-3 py-1.5 font-mono text-xs">{i.sku}</td>
+                  <td className="px-3 py-1.5 font-mono text-xs whitespace-nowrap">{i.sku}</td>
                   <td className="px-3 py-1.5">
                     {i.name}
                     {i.status !== "active" && (
                       <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{i.status}</span>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 text-right text-gray-500">{fmtMoney(i.listPrice)}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-600">{i.onHand}</td>
-                  <td className="px-3 py-1.5 text-right text-gray-600">{i.allocated}</td>
-                  <td className={`px-3 py-1.5 text-right font-medium ${i.available <= 0 ? "text-red-600" : i.available < 10 ? "text-amber-600" : "text-gray-900"}`}>
-                    {i.available}
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap text-gray-500">{fmtMoney(i.listPrice)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    <span className={`font-medium ${i.available <= 0 ? "text-red-600" : i.available < 10 ? "text-amber-600" : "text-gray-900"}`}>
+                      {i.available}
+                    </span>
+                    <span className="block text-[10px] leading-tight text-gray-400">
+                      {i.onHand} on hand · {i.allocated} allocated
+                    </span>
                   </td>
                 </tr>
               ))}
