@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as s from "../db/schema.js";
 import { runOffline } from "../agent/offline.js";
@@ -180,9 +180,18 @@ export class PgRepository implements Repository {
     const byEmail = new Map(emails.map((e) => [e.emailId, e]));
     let nextSo = maxOrderNumber(snapshot) + 1;
 
+    // A restored email was deliberately put back in front of a human: a later
+    // run must not silently bury it again.
+    const restored = await this.db
+      .select({ emailId: s.emails.emailId })
+      .from(s.emails)
+      .where(isNotNull(s.emails.restoredAt));
+    const restoredIds = new Set(restored.map((r) => r.emailId));
+
     for (const result of results) {
       const email = byEmail.get(result.emailId);
       if (!email) continue;
+      if (restoredIds.has(email.emailId)) continue;
 
       // SO numbers are assigned here, so the audit line for a draft is written here too.
       const drafted: { soNumber: string; lineCount: number; total: number }[] = [];
@@ -205,6 +214,9 @@ export class PgRepository implements Repository {
           notesJson: JSON.stringify(result.notes),
           changeProposalJson: result.changeProposal ? JSON.stringify(result.changeProposal) : null,
           duplicateOfEmailId: result.duplicateOfEmailId,
+          urgencyLevel: result.urgency.level,
+          urgencyReason: result.urgency.reason,
+          urgencySource: result.urgency.source,
           processedAt: new Date(),
         })
         .onConflictDoUpdate({
@@ -217,6 +229,9 @@ export class PgRepository implements Repository {
             notesJson: JSON.stringify(result.notes),
             changeProposalJson: result.changeProposal ? JSON.stringify(result.changeProposal) : null,
             duplicateOfEmailId: result.duplicateOfEmailId,
+            urgencyLevel: result.urgency.level,
+            urgencyReason: result.urgency.reason,
+            urgencySource: result.urgency.source,
             processedAt: new Date(),
           },
         });
@@ -481,6 +496,11 @@ export class PgRepository implements Repository {
       audit: (auditByEmail.get(e.emailId) ?? []).map((a) => ({ actor: a.actor, action: a.action, detail: a.detail })),
       duplicateOfEmailId: e.duplicateOfEmailId ?? null,
       notes: safeJson(e.notesJson, []),
+      urgency: {
+        level: e.urgencyLevel === "today" || e.urgencyLevel === "soon" ? e.urgencyLevel : "none",
+        reason: e.urgencyReason ?? "not assessed yet",
+        source: e.urgencySource === "rules" ? "rules" : "agent",
+      },
     };
 
     return {
@@ -813,6 +833,17 @@ export class PgRepository implements Repository {
     await this.db.update(s.emails).set({ reviewStatus: "no_action" }).where(eq(s.emails.emailId, emailId));
     await this.insertAudit(emailId, "human", "no_action", `Marked ${emailId} as no action`);
     return { ok: true, reasons: [], detail: "Marked no action — nothing released" };
+  }
+
+  async restore(emailId: string): Promise<ActionResult> {
+    const email = await this.db.select().from(s.emails).where(eq(s.emails.emailId, emailId));
+    if (email.length === 0) return { ok: false, reasons: ["Email not found"] };
+    await this.db
+      .update(s.emails)
+      .set({ reviewStatus: "pending", rejectReason: null, disposition: "ESCALATE", restoredAt: new Date() })
+      .where(eq(s.emails.emailId, emailId));
+    await this.insertAudit(emailId, "human", "restored", `Restored ${emailId} from the ignore bucket`);
+    return { ok: true, reasons: [], detail: "Back in the queue for a human decision" };
   }
 
   async bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]> {

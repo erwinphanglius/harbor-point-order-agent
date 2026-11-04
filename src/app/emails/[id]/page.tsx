@@ -12,7 +12,11 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
   const item = await repo.getEmail(id);
   if (!item) notFound();
 
-  const snapshot = await repo.getSnapshot();
+  const [snapshot, humanAudit] = await Promise.all([
+    repo.getSnapshot(),
+    repo.listAudit({ emailId: id, actor: "human" }),
+  ]);
+  const lastHumanActionAt = humanAudit[0]?.timestamp ?? null;
   const trace = buildTrace(item.result, snapshot);
   const shipTos = item.result.customerId ? await repo.listShipTos(item.result.customerId) : [];
 
@@ -61,6 +65,8 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
         duplicateOf={item.result.duplicateOfEmailId ?? null}
         duplicateOfSo={duplicateOfSo}
         reviewStatus={item.reviewStatus}
+        urgency={item.result.urgency}
+        decidedAt={lastHumanActionAt}
       />
     </div>
   );

@@ -44,6 +44,11 @@ export async function rejectOrder(emailId: string, soNumber: string | null, reas
   return fromResult(r);
 }
 
+export async function restoreEmail(emailId: string): Promise<ActionResponse> {
+  revalidateAll(emailId);
+  return fromResult(await getRepository().restore(emailId));
+}
+
 export async function markNoAction(emailId: string): Promise<ActionResponse> {
   const r = await getRepository().markNoAction(emailId);
   revalidateAll(emailId);

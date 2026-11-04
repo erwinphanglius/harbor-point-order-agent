@@ -16,6 +16,7 @@ import { detectInjection } from "./injection.js";
 import { detectDuplicate, extractCustomerPo } from "./duplicate.js";
 import { classifyEmail } from "./classification.js";
 import { buildDomainMap, resolveCustomer, resolveShipTo } from "./resolution.js";
+import { rulesUrgency } from "./urgency.js";
 
 export interface ProcessContext {
   orderDate: DateString;
@@ -171,9 +172,10 @@ export function processEmail(email: Email, snapshot: ErpSnapshot, ctx: ProcessCo
     audit,
     duplicateOfEmailId: dup.duplicateOfEmailId,
     notes,
+    urgency: rulesUrgency(email),
   };
 
-  if (classification === "AUTO_REPLY" || classification === "SPAM") {
+  if (classification === "AUTO_REPLY" || classification === "SPAM" || classification === "NOTIFICATION") {
     result.disposition = "IGNORE";
     notes.push(`ignored as ${classification.toLowerCase()}`);
     audit.push({ actor: "agent", action: "ignored", detail: `Classified ${classification}` });

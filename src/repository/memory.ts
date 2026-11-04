@@ -303,6 +303,17 @@ export class MemoryRepository implements Repository {
     return { ok: true, reasons: [], detail: "Marked no action — nothing released" };
   }
 
+  async restore(emailId: string): Promise<ActionResult> {
+    const item = this.byId.get(emailId);
+    if (!item) return { ok: false, reasons: ["Email not found"] };
+    item.emailState = "pending";
+    item.emailRejectReason = null;
+    item.reviewStatus = "pending";
+    if (item.result) item.result.disposition = "ESCALATE";
+    this.appendAudit(emailId, "human", "restored", `Restored ${emailId} from the ignore bucket`);
+    return { ok: true, reasons: [], detail: "Back in the queue for a human decision" };
+  }
+
   async bulkRelease(emailIds: string[]): Promise<{ emailId: string; result: ActionResult }[]> {
     const out: { emailId: string; result: ActionResult }[] = [];
     for (const emailId of emailIds) {
