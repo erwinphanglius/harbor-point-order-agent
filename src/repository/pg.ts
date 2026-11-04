@@ -764,6 +764,15 @@ export class PgRepository implements Repository {
     const snapshot = await this.loadSnapshot();
     const currentLines = await this.loadLines(soNumber);
 
+    // Approving without touching anything is just a release: keep the audit
+    // trail free of "edited" rows for orders nobody edited.
+    const sameShipTo = edits.shipToId === order.shipToId;
+    const sameDate = (edits.requestedDate ?? null) === (order.requestedDate ?? null);
+    const sameLines =
+      edits.lines.length === currentLines.length &&
+      edits.lines.every((e) => currentLines.find((l) => l.sku === e.sku)?.quantity === e.quantity);
+    if (sameShipTo && sameDate && sameLines) return this.release(emailId, soNumber);
+
     const editedLines: OrderLineProposal[] = edits.lines.map((e, idx) => {
       const original = currentLines.find((l) => l.sku === e.sku);
       const price = resolveUnitPrice(e.sku, order.customerId, this.releaseDate, snapshot.prices, snapshot.products);

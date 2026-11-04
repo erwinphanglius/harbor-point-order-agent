@@ -84,4 +84,19 @@ describe("MemoryRepository release path", () => {
     expect(res.detail).not.toMatch(/cancelled|back to stock|credit released/i);
     expect(item.reviewStatus).toBe("approved");
   });
+
+  it("releases a draft that a person approved without changing anything", async () => {
+    const candidate = (await repo.listInbox()).find((i) => i.drafts.some((d) => d.status === "DRAFT"))!;
+    const emailId = candidate.email.emailId;
+    const draft = candidate.drafts.find((d) => d.status === "DRAFT")!;
+    const res = await repo.releaseWithEdits(emailId, draft.soNumber, {
+      lines: draft.lines.map((l) => ({ sku: l.sku, quantity: l.quantity })),
+      shipToId: draft.shipToId,
+      requestedDate: draft.requestedDate,
+    });
+    expect(res.ok).toBe(true);
+    const after = (await repo.getEmail(emailId))!;
+    expect(after.drafts.find((d) => d.soNumber === draft.soNumber)!.status).toBe("RELEASED");
+    expect(after.drafts.find((d) => d.soNumber === draft.soNumber)!.releasedAt).toBeTruthy();
+  });
 });

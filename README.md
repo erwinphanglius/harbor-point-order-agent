@@ -30,12 +30,23 @@ Open **E012** to see a prompt-injection attempt forced to human review, and
   disposition badge (auto-draft, proposal, escalate, route, duplicate, ignore),
   plus the customer and amount when known. Filter by disposition, search, and
   bulk-release selected auto-drafts in one click.
-- **Email detail** (`/emails/[id]`) — the raw email, the agent's trace, the
-  extracted (editable) proposal, rule results/warnings, and actions: *Approve &
-  release*, *Save edits then approve*, *Reject with a reason*, *Mark as
-  no-action*.
-- **Audit** (`/audit`) — the append-only trail, newest first, filterable by
-  email and actor (agent / system / human).
+  Emails the agent judges urgent carry *Needs it today* / *Time-pressed* with
+  the sentence it based that on, and the list sorts them first. The panel beside
+  the legend reports what the run produced (emails read, drafts and their value,
+  what needs a person, spend) instead of the raw snapshot counts.
+- **Email detail** (`/emails/[id]`) — the order(s) this email produced at the
+  very top, the raw email, the agent's urgency call and reasoning, the
+  extracted (editable) proposal and the rule results. One approval action:
+  *Approve & release* saves whatever is on screen, re-checks price, stock and
+  credit, then releases. *Close* lives once per email, at the bottom, with a
+  required reason; after that the controls are replaced by a static record of
+  who closed it, when and why. Nothing is ever released by the agent alone.
+- **Restorable ignore** — automated replies, notifications and thank-you notes
+  are set aside automatically, kept in the *Ignore* filter and restorable to the
+  queue in one click, from the list or from the email itself.
+- **Audit** (`/audit`) — the append-only trail, newest first, grouped by order or
+  flat, switchable instantly, filterable by text and actor (agent / system /
+  human).
 - **Auth** — Supabase email/password via `@supabase/ssr`, with a middleware that
   protects every route. If the Supabase env vars are missing the app runs open
   in dev mode with a visible "auth is disabled" banner.
