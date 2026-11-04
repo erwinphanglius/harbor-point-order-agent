@@ -15,7 +15,7 @@ ERP snapshot and the 40 raw emails only, so the inbox opens **unprocessed** — 
 before state.
 
 Press **Run agent** at the top of the inbox. It drives the tools through
-`glm-5.3-flash` on OpenCode Go in batches of five, shows progress as it goes
+`glm-5.3-flash` on OpenCode Go in batches of ten, shows progress as it goes
 (`15/40`, tokens, cost), and writes the verdicts, drafts and cost to Postgres.
 The dollar figure is the provider's list price: this demo runs on a flat-rate
 plan, so no per-request charge is incurred. **Reset** wipes drafts,
