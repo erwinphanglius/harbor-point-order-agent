@@ -599,7 +599,8 @@ export function applyPolicy(llm: ProcessingResult, policy: ProcessingResult): Pr
     return llm;
   }
 
-  return policy;
+  // The rules decide what happens to the email; the deadline is still the agent's call.
+  return { ...policy, urgency: llm.urgency };
 }
 
 /** Run the agent over a slice of emails, a few at a time so the demo stays responsive. */
