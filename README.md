@@ -193,6 +193,18 @@ Every agent action, every human release/reject/edit and every system side-effect
 (stock allocation, credit consumption) writes a row with `actor`, `action` and
 `detail`.
 
+## The written deliverables
+
+- `docs/product-brief.md` — the user, the problem, the approval line, how success
+  would be measured, and the decisions the brief left open (with the reason for
+  each).
+- `docs/task-breakdown.md` — every task with its spec and acceptance criteria, and
+  an appendix with the raw prompts the coding agent was given and the corrections
+  I typed when it got things wrong.
+- `docs/results-and-agent-log.md` — the real 40-email outcome, where it is weak,
+  and how the agents are directed.
+- `docs/plan.md` — the original implementation plan, kept as it was written.
+
 ## Data
 
 The assessment data-pack (40 emails + ERP snapshot as CSVs) lives under
