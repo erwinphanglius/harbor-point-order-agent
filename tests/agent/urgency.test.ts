@@ -35,6 +35,27 @@ describe("agent-decided urgency", () => {
     expect(llm.urgency.reason).toBeTruthy();
   });
 
+  it("keeps the model's deadline when the rules escalate or route instead", () => {
+    const email = emails.find((e) => e.emailId === "E012")!;
+    const llm = finalize(
+      email,
+      { classification: "OTHER", lines: [], urgency: { level: "soon", reason: "says the truck leaves before the weekend" } } as never,
+      snapshot,
+      orderDate,
+      new Map(),
+    );
+    const policy = processEmail(email, snapshot, { orderDate, poSeen: new Map() });
+    expect(llm.disposition).not.toBe(policy.disposition);
+
+    const merged = applyPolicy(llm, policy);
+    expect(merged.disposition).toBe(policy.disposition);
+    expect(merged.urgency).toEqual({
+      level: "soon",
+      reason: "says the truck leaves before the weekend",
+      source: "agent",
+    });
+  });
+
   it("survives the policy layer taking the outcome over", () => {
     const { merged } = judge("E012", { level: "soon", reason: "asks for Friday delivery despite the credit hold" });
     expect(merged.disposition).toBe("ESCALATE");
